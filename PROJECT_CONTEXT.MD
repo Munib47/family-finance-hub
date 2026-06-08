@@ -1,3 +1,22 @@
+# Reference Documents
+
+Project Flow Diagram:
+
+docs/app-flow/project-flow-v1.png
+
+This diagram represents the approved UX flow and business requirements for:
+
+- Authentication
+- Expense Management
+- Want To Buy
+- Budget Management
+- Money Distribution
+- Permissions Management
+- Notifications
+- Theme Customization
+
+Future AI sessions must use this diagram as a source of truth together with PROJECT_CONTEXT.md.
+
 # PROJECT_CONTEXT.md
 
 # Family Expense Management Application
