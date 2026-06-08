@@ -98,10 +98,10 @@ Permissions are managed individually.
 Owner Workflow:
 
 Owner
-→ Settings
-→ Users
-→ Select User
-→ Permission Toggles
+-> Settings
+-> Users
+-> Select User
+-> Permission Toggles
 
 Permissions:
 
@@ -127,10 +127,8 @@ Owner receives all permissions automatically.
 # Application Flow
 
 Login
-↓
-Dashboard
-↓
-Select Module
+-> Dashboard
+-> Select Module
 
 Option A:
 Expense Management
@@ -143,12 +141,9 @@ Want To Buy
 # Expense Management Flow
 
 Expense Management
-↓
-Select Month
-↓
-Expense List
-↓
-Add / Edit Expense
+-> Select Month
+-> Expense List
+-> Add / Edit Expense
 
 Expense Fields:
 
@@ -187,12 +182,9 @@ Requirement:
 When a user edits an expense:
 
 Old Value
-↓
-New Value
-↓
-Store History
-↓
-Notify Owner
+-> New Value
+-> Store History
+-> Notify Owner
 
 Database:
 
@@ -209,10 +201,8 @@ Stores:
 # Want To Buy Flow
 
 Want To Buy
-↓
-Select Month
-↓
-Item List
+-> Select Month
+-> Item List
 
 Each item contains:
 
@@ -288,14 +278,10 @@ Owner can distribute money.
 Workflow:
 
 Owner
-↓
-Select User
-↓
-Enter Amount
-↓
-Enter Purpose
-↓
-Save
+-> Select User
+-> Enter Amount
+-> Enter Purpose
+-> Save
 
 Database:
 
@@ -378,7 +364,20 @@ Database:
 
 # Database Status
 
-Completed.
+Status:
+Complete
+
+Database implementation milestones:
+
+* ✅ Supabase project created
+* ✅ Database migration executed successfully
+* ✅ All tables created
+* ✅ Seed data inserted
+* ✅ Indexes created
+* ✅ RLS policies configured
+* ✅ Functions created
+* ✅ Triggers created
+* ✅ Permissions system configured
 
 Core Tables:
 
@@ -408,6 +407,8 @@ Core Tables:
 * family_theme_settings
 * user_theme_overrides
 * want_to_buy_items
+
+Database architecture is complete and must not be modified without approval.
 
 ---
 
@@ -490,6 +491,157 @@ settings/
 
 ---
 
+# Current Folder Structure
+
+Current repository structure:
+
+* src/
+* src/assets/
+* src/assets/icons/
+* src/assets/images/
+* src/components/
+* src/components/common/
+* src/components/forms/
+* src/components/layout/
+* src/components/ui/
+* src/constants/
+* src/context/
+* src/hooks/
+* src/layouts/
+* src/lib/
+* src/pages/
+* src/pages/auth/
+* src/pages/budget/
+* src/pages/expenses/
+* src/pages/notifications/
+* src/pages/settings/
+* src/pages/want-to-buy/
+* src/routes/
+* src/services/
+* src/styles/
+* src/utils/
+* supabase/
+* supabase/migrations/
+* public/
+
+Current implemented frontend files:
+
+* src/main.jsx
+* src/App.jsx
+* src/index.css
+* src/App.css
+* src/lib/supabase.js
+* src/routes/AppRoutes.jsx
+* src/pages/auth/Login.jsx
+* src/pages/auth/Register.jsx
+
+Current database file:
+
+* supabase/migrations/migration_001_initial_schema.sql
+
+Notes:
+
+* Feature folders are recommended but not fully implemented yet.
+* Current auth pages are placeholders.
+* Current frontend structure has starter scaffolding and empty folders prepared for future phases.
+
+---
+
+# Repository Information
+
+Repository status:
+
+* ✅ Git initialized
+* ✅ GitHub repository created
+* ✅ Initial code pushed to GitHub
+* Repository connected to GitHub
+* Initial commit completed
+* Safe rollback available through Git
+* Future development should happen through commits per phase
+
+Repository includes:
+
+* React Vite application
+* Supabase migration
+* Project documentation
+* AI development rules
+* Environment-based Supabase connection
+
+---
+
+# Current Repository State
+
+* Repository connected to GitHub
+* Initial commit completed
+* Safe rollback available through Git
+* Future development should happen through commits per phase
+
+---
+
+# Infrastructure Status
+
+Completed:
+
+* ✅ React Vite project initialized
+* ✅ Tailwind CSS installed
+* ✅ React Router DOM installed
+* ✅ Supabase project created
+* ✅ Supabase connected to application
+* ✅ Environment variables configured
+* ✅ Database migration executed successfully
+* ✅ PROJECT_CONTEXT.md created
+* ✅ AI_DEVELOPMENT_RULES.md created
+* ✅ Git initialized
+* ✅ GitHub repository created
+* ✅ Initial code pushed to GitHub
+
+Application infrastructure:
+
+* Vite configured through vite.config.js
+* Tailwind CSS configured through @tailwindcss/vite
+* Supabase client configured in src/lib/supabase.js
+* React Router DOM configured in src/routes/AppRoutes.jsx
+* Environment variables configured through .env
+
+---
+
+# Development Environment
+
+Runtime and tooling:
+
+* React 19
+* Vite
+* Tailwind CSS
+* Supabase JavaScript client
+* React Router DOM
+* React Hook Form
+* React Hot Toast
+* ESLint
+* JavaScript / JSX
+
+Available npm scripts:
+
+* npm run dev
+* npm run build
+* npm run lint
+* npm run preview
+
+Environment variables:
+
+* VITE_SUPABASE_URL
+* VITE_SUPABASE_ANON_KEY
+
+Development rules:
+
+* Use JavaScript / JSX because TypeScript is not installed.
+* Use mobile-first Tailwind CSS.
+* Use Context API for app state.
+* Use Supabase Auth for authentication.
+* Use existing Supabase tables, functions, triggers, and RLS policies.
+* Do not create or modify database schema unless explicitly approved.
+
+---
+
 # Development Roadmap
 
 Phase 1
@@ -556,52 +708,247 @@ Theme Customization
 
 ---
 
-# Current Project Status
+# Project Status
+
+Project State:
+Database Complete
+Frontend Starting
+
+Completed milestones:
+
+* ✅ React Vite project initialized
+* ✅ Tailwind CSS installed
+* ✅ React Router DOM installed
+* ✅ Supabase project created
+* ✅ Supabase connected to application
+* ✅ Environment variables configured
+* ✅ Database migration executed successfully
+* ✅ All tables created
+* ✅ Seed data inserted
+* ✅ RLS policies configured
+* ✅ Functions created
+* ✅ Triggers created
+* ✅ Permissions system configured
+* ✅ PROJECT_CONTEXT.md created
+* ✅ AI_DEVELOPMENT_RULES.md created
+* ✅ Git initialized
+* ✅ GitHub repository created
+* ✅ Initial code pushed to GitHub
+
+Current module status:
 
 Database:
-✅ Complete
+Complete
 
 Tables:
-✅ Complete
+Complete
 
 Indexes:
-✅ Complete
+Complete
 
 Functions:
-✅ Complete
+Complete
 
 Triggers:
-✅ Complete
+Complete
 
 Seed Data:
-✅ Complete
+Complete
 
 RLS:
-✅ Complete
+Complete
 
 Authentication:
-❌ Not Started
+In Progress
 
 Frontend:
-❌ Not Started
+Starting
 
 Dashboard:
-❌ Not Started
+Not Started
 
 Expense Module:
-❌ Not Started
+Not Started
 
 Want To Buy:
-❌ Not Started
+Not Started
 
 Permissions UI:
-❌ Not Started
+Not Started
 
 Notifications UI:
-❌ Not Started
+Not Started
 
 Theme Settings UI:
-❌ Not Started
+Not Started
+
+---
+
+# Development Progress
+
+Completed:
+
+* Database Architecture
+* Security Architecture
+* Permissions Architecture
+* Supabase Setup
+* Supabase Client Connection
+* Environment Configuration
+* React Vite Setup
+* Tailwind CSS Setup
+* React Router DOM Setup
+* Git Setup
+* GitHub Repository Setup
+* Initial Documentation
+
+In Progress:
+
+* Phase 1 - Authentication Architecture
+
+Not Started:
+
+* Auth Context
+* Protected Routes
+* Login Form Implementation
+* Register Form Implementation
+* Forgot Password Flow
+* Session Management
+* Family Creation Flow
+* Dashboard
+* Expense Management UI
+* Want To Buy UI
+* Permissions UI
+* Budget UI
+* Money Distribution UI
+* Notifications UI
+* Theme Customization UI
+
+---
+
+# Current Frontend Status
+
+Status:
+Starting
+
+Completed:
+
+* React app entry point created
+* Main App component created
+* Basic route file created
+* Placeholder Login page created
+* Placeholder Register page created
+* Supabase client file created
+* Tailwind CSS imported
+
+Current routes:
+
+* / -> Login
+* /register -> Register
+
+Missing:
+
+* AuthContext
+* Session persistence implementation
+* ProtectedRoute
+* PublicRoute / GuestRoute
+* Logout
+* Forgot Password
+* Family onboarding
+* Dashboard
+* Module selection
+* Month selector
+* Expense pages
+* Want To Buy pages
+* Settings pages
+* Permissions pages
+* Notification pages
+* Theme customization pages
+
+---
+
+# Current Development Phase
+
+Current Phase:
+
+Phase 1 - Authentication Architecture
+
+Status:
+IN PROGRESS
+
+Completed:
+
+* Database Architecture
+* Security Architecture
+* Permissions Architecture
+* Git Setup
+
+Next:
+
+* Auth Architecture
+* Auth Context
+* Protected Routes
+* Login
+* Register
+* Forgot Password
+* Session Management
+
+---
+
+# Next Development Phase
+
+Next implementation target:
+
+Phase 1 - Authentication Architecture
+
+Implementation order:
+
+1. Create AuthContext using Supabase Auth.
+2. Add session persistence and auth state listener.
+3. Load profile after authentication.
+4. Load active family membership.
+5. Load user role.
+6. Load permission grants.
+7. Add protected routes.
+8. Add guest routes.
+9. Implement Login form.
+10. Implement Register form.
+11. Implement Forgot Password flow.
+12. Add logout handling.
+
+Phase 1 must be completed before dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
+
+---
+
+# AI Collaboration Rules
+
+1. Read PROJECT_CONTEXT.md before every task.
+2. Read AI_DEVELOPMENT_RULES.md before implementation.
+3. Never modify database schema without approval.
+4. Never create new tables without approval.
+5. Use existing Supabase tables only.
+6. Use existing RLS policies only.
+7. Build one phase at a time.
+8. Do not generate the entire application at once.
+9. Follow existing Supabase architecture.
+10. Follow existing permissions system.
+11. Follow existing RLS security model.
+12. Keep Owner permissions separate from Authorized User permissions.
+13. Mobile-first UI only.
+14. Use SVG icons only.
+15. Use React 19.
+16. Use Vite.
+17. Use Tailwind CSS.
+18. Use Context API.
+19. Use React Router DOM.
+20. Use JavaScript / JSX unless TypeScript is installed later with approval.
+21. All forms must include loading and error states.
+22. Use reusable components.
+23. Do not create code outside the requested scope.
+24. Generate complete files, not partial snippets.
+25. Follow existing folder structure.
+26. Month selection must remain the primary navigation method.
+27. All important actions must generate activity logs.
+28. Expense edits must create history and notifications through existing database behavior.
 
 ---
 
@@ -626,3 +973,29 @@ Theme Settings UI:
 9. All important actions must generate activity logs.
 
 10. Expense edits must create history and notifications.
+
+---
+
+# Rules For Future AI Sessions
+
+1. Read PROJECT_CONTEXT.md first.
+2. Read AI_DEVELOPMENT_RULES.md second.
+3. Never modify database schema without approval.
+4. Never generate the entire application at once.
+5. Build one phase at a time.
+6. Follow existing Supabase architecture.
+7. Follow existing permissions system.
+8. Follow existing RLS security model.
+9. Mobile-first UI only.
+10. Use SVG icons only.
+
+---
+
+# Last Updated
+
+Project State:
+Database Complete
+Frontend Starting
+
+Ready For:
+Authentication Implementation
