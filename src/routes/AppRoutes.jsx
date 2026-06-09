@@ -54,7 +54,8 @@ export default function AppRoutes() {
           <Route path="/family/setup" element={<FamilySetup />} />
         </Route>
         <Route element={<ProtectedRoute requireFamily={true} />}>
-          <Route path="/dashboard" element={<DashboardPlaceholder />} />
+          {/* <Route path="/dashboard" element={<DashboardPlaceholder />} /> */}
+          <Route path="/dashboard" element={<Dashboard />} />
         </Route>
         <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>
