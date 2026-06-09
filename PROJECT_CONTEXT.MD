@@ -525,6 +525,13 @@ Current repository structure:
 * src/components/ui/
 * src/constants/
 * src/context/
+* src/features/
+* src/features/auth/
+* src/features/auth/components/
+* src/features/auth/context/
+* src/features/auth/hooks/
+* src/features/auth/routes/
+* src/features/auth/services/
 * src/hooks/
 * src/layouts/
 * src/lib/
@@ -551,6 +558,16 @@ Current implemented frontend files:
 * src/App.css
 * src/lib/supabase.js
 * src/routes/AppRoutes.jsx
+* src/features/auth/index.js
+* src/features/auth/components/AuthErrorState.jsx
+* src/features/auth/components/AuthLoadingScreen.jsx
+* src/features/auth/context/AuthContext.jsx
+* src/features/auth/hooks/useAuth.js
+* src/features/auth/routes/ProtectedRoute.jsx
+* src/features/auth/routes/PublicRoute.jsx
+* src/features/auth/services/authBootstrapService.js
+* src/features/auth/services/authService.js
+* src/pages/auth/ForgotPassword.jsx
 * src/pages/auth/Login.jsx
 * src/pages/auth/Register.jsx
 
@@ -560,9 +577,9 @@ Current database file:
 
 Notes:
 
-* Feature folders are recommended but not fully implemented yet.
-* Current auth pages are placeholders.
-* Current frontend structure has starter scaffolding and empty folders prepared for future phases.
+* Phase 1B authentication foundation is implemented.
+* Auth pages are still placeholder screens and will be implemented in the next phase.
+* Current frontend structure includes the approved auth feature module.
 
 ---
 
@@ -778,7 +795,7 @@ RLS:
 Complete
 
 Authentication:
-In Progress
+Foundation Complete
 
 Frontend:
 Starting
@@ -810,6 +827,8 @@ Completed:
 * Database Architecture
 * Security Architecture
 * Permissions Architecture
+* Phase 1A Authentication Architecture
+* Phase 1B Authentication Foundation
 * Supabase Setup
 * Supabase Client Connection
 * Environment Configuration
@@ -822,16 +841,13 @@ Completed:
 
 In Progress:
 
-* Phase 1 - Authentication Architecture
+* Phase 2 - Authentication Pages
 
 Not Started:
 
-* Auth Context
-* Protected Routes
 * Login Form Implementation
 * Register Form Implementation
 * Forgot Password Flow
-* Session Management
 * Family Creation Flow
 * Dashboard
 * Expense Management UI
@@ -854,6 +870,24 @@ Completed:
 * React app entry point created
 * Main App component created
 * Basic route file created
+* Supabase client hardened with auth persistence settings
+* AuthContext created
+* AuthProvider created
+* useAuth hook created
+* Auth bootstrap service created
+* Auth service created
+* Session persistence foundation implemented
+* Auth state listener implemented
+* Loading state management implemented
+* Error state management implemented
+* Profile loading implemented
+* Family membership loading implemented
+* Role loading implemented
+* Permission loading implemented through existing has_permission RPC
+* ProtectedRoute created
+* PublicRoute created
+* Forgot Password route placeholder created
+* Temporary protected dashboard placeholder created
 * Placeholder Login page created
 * Placeholder Register page created
 * Supabase client file created
@@ -862,18 +896,19 @@ Completed:
 Current routes:
 
 * / -> Login
+* /login -> Login
 * /register -> Register
+* /forgot-password -> Forgot Password
+* /dashboard -> Protected authentication-ready placeholder
 
 Missing:
 
-* AuthContext
-* Session persistence implementation
-* ProtectedRoute
-* PublicRoute / GuestRoute
-* Logout
-* Forgot Password
+* Login form implementation
+* Register form implementation
+* Forgot Password form implementation
+* User-facing logout placement outside temporary placeholder
 * Family onboarding
-* Dashboard
+* Production dashboard
 * Module selection
 * Month selector
 * Expense pages
@@ -889,10 +924,10 @@ Missing:
 
 Current Phase:
 
-Phase 1 - Authentication Architecture
+Phase 1B - Authentication Foundation
 
 Status:
-IN PROGRESS
+COMPLETE
 
 Completed:
 
@@ -900,16 +935,30 @@ Completed:
 * Security Architecture
 * Permissions Architecture
 * Git Setup
+* Phase 1A Authentication Architecture
+* AuthContext
+* AuthProvider
+* useAuth
+* ProtectedRoute
+* PublicRoute
+* Session Persistence Foundation
+* Auth State Listener
+* Loading State Management
+* Error State Management
+* Profile Loading
+* Family Membership Loading
+* Role Loading
+* Permission Loading
 
 Next:
 
-* Auth Architecture
-* Auth Context
-* Protected Routes
-* Login
-* Register
-* Forgot Password
-* Session Management
+* Phase 2 - Authentication Pages
+* Login Form
+* Register Form
+* Forgot Password Form
+* Form Loading States
+* Form Error States
+* Post-auth Redirect UX
 
 ---
 
@@ -917,24 +966,20 @@ Next:
 
 Next implementation target:
 
-Phase 1 - Authentication Architecture
+Phase 2 - Authentication Pages
 
 Implementation order:
 
-1. Create AuthContext using Supabase Auth.
-2. Add session persistence and auth state listener.
-3. Load profile after authentication.
-4. Load active family membership.
-5. Load user role.
-6. Load permission grants.
-7. Add protected routes.
-8. Add guest routes.
-9. Implement Login form.
-10. Implement Register form.
-11. Implement Forgot Password flow.
-12. Add logout handling.
+1. Implement Login form using useAuth.
+2. Implement Register form using useAuth.
+3. Implement Forgot Password form using useAuth.
+4. Add loading states to all authentication forms.
+5. Add error states to all authentication forms.
+6. Add successful auth redirects.
+7. Preserve mobile-first layout.
+8. Keep database architecture unchanged.
 
-Phase 1 must be completed before dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
+Authentication pages must be completed before family creation, dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
 
 ---
 
@@ -1017,4 +1062,4 @@ Database Complete
 Frontend Starting
 
 Ready For:
-Authentication Implementation
+Authentication Pages Implementation
