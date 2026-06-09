@@ -63,7 +63,7 @@ export default function Register() {
   }
 
   return (
-    <AuthLayout title="Create Account" subtitle="Fill in the details to register" backTo="/">
+    <AuthLayout title="Create Account" subtitle="Fill in the details to register" backTo="/" showBackButton={false}>
       <AuthCard>
         <form className="space-y-4" noValidate onSubmit={handleSubmit(onSubmit)}>
           {errors.root?.server ? (

@@ -54,6 +54,7 @@ export default function Login() {
       title="Welcome Back"
       subtitle="Please login to your account"
       backTo="/login"
+      showBackButton={false}
     >
       <AuthCard>
         <form className="space-y-4" noValidate onSubmit={handleSubmit(onSubmit)}>
