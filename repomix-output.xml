@@ -44,6 +44,7 @@ The content is organized as follows:
 AI_DEVELOPMENT_RULES.md
 docs/app-flow/family-finance-hub-app-flow.png
 docs/architecture/architecture.md
+docs/decisions/ai-handoff.md
 docs/decisions/auth-plan.md
 docs/roadmap/roadmap.md
 eslint.config.js
@@ -58,7 +59,11 @@ src/App.jsx
 src/assets/hero.png
 src/assets/react.svg
 src/assets/vite.svg
+src/features/auth/components/AuthButton.jsx
+src/features/auth/components/AuthCard.jsx
 src/features/auth/components/AuthErrorState.jsx
+src/features/auth/components/AuthInput.jsx
+src/features/auth/components/AuthLayout.jsx
 src/features/auth/components/AuthLoadingScreen.jsx
 src/features/auth/context/AuthContext.jsx
 src/features/auth/hooks/useAuth.js
@@ -67,12 +72,17 @@ src/features/auth/routes/ProtectedRoute.jsx
 src/features/auth/routes/PublicRoute.jsx
 src/features/auth/services/authBootstrapService.js
 src/features/auth/services/authService.js
+src/features/family/components/FamilySetupCard.jsx
+src/features/family/components/FamilySetupForm.jsx
+src/features/family/index.js
+src/features/family/services/familyService.js
 src/index.css
 src/lib/supabase.js
 src/main.jsx
 src/pages/auth/ForgotPassword.jsx
 src/pages/auth/Login.jsx
 src/pages/auth/Register.jsx
+src/pages/family/FamilySetup.jsx
 src/routes/AppRoutes.jsx
 supabase/migrations/migration_001_initial_schema.sql
 vite.config.js
@@ -81,627 +91,213 @@ vite.config.js
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/features/auth/components/AuthErrorState.jsx">
-function getErrorMessage(error) {
-  if (!error) {
-    return "Something went wrong while loading authentication state.";
-  }
+<file path="src/features/family/components/FamilySetupCard.jsx">
+import { AuthCard } from "../../auth";
+import FamilySetupForm from "./FamilySetupForm";
 
-  if (typeof error === "string") {
-    return error;
-  }
-
-  return error.message ?? "Something went wrong while loading authentication state.";
-}
-
-export default function AuthErrorState({
-  error,
-  onRetry,
-  title = "Authentication could not be loaded",
-}) {
+export default function FamilySetupCard({ loading, onSubmit, error }) {
   return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
-      <div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
-        <div className="rounded-lg border border-red-200 bg-white p-5 text-left shadow-sm">
-          <div
-            className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600"
-            aria-hidden="true"
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path d="M12 9v4" />
-              <path d="M12 17h.01" />
-              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
-            </svg>
-          </div>
-          <h1 className="text-lg font-semibold text-slate-950">{title}</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{getErrorMessage(error)}</p>
-          {onRetry ? (
-            <button
-              className="mt-5 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-              type="button"
-              onClick={onRetry}
-            >
-              Retry
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </main>
+    <AuthCard>
+      <FamilySetupForm error={error} loading={loading} onSubmit={onSubmit} />
+    </AuthCard>
   );
 }
 </file>
 
-<file path="src/features/auth/components/AuthLoadingScreen.jsx">
-export default function AuthLoadingScreen({ message = "Loading your session" }) {
-  return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
-      <div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col items-center justify-center text-center">
-        <div
-          className="mb-5 h-11 w-11 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"
-          aria-hidden="true"
-        />
-        <p className="text-sm font-medium text-slate-600">{message}</p>
-      </div>
-    </main>
-  );
-}
-</file>
+<file path="src/features/family/components/FamilySetupForm.jsx">
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { AuthInput, AuthButton } from "../../auth";
 
-<file path="src/features/auth/context/AuthContext.jsx">
-/* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+export default function FamilySetupForm({ loading, onSubmit, error: serverError }) {
+  const {
+    formState: { errors, isSubmitting },
+    handleSubmit,
+    register,
+    setError,
+  } = useForm({
+    defaultValues: {
+      familyName: "",
+    },
+  });
 
-import {
-  getCurrentSession,
-  onAuthStateChange,
-  sendPasswordResetEmail,
-  signInWithEmail,
-  signOut,
-  signUpWithEmail,
-} from "../services/authService";
-import { bootstrapAuthState } from "../services/authBootstrapService";
-
-const emptyAuthState = {
-  family: null,
-  membership: null,
-  permissionDefinitions: [],
-  permissions: {},
-  profile: null,
-  role: null,
-  session: null,
-  user: null,
-};
-
-export const AuthContext = createContext(null);
-
-export function AuthProvider({ children }) {
-  const requestIdRef = useRef(0);
-  const [authState, setAuthState] = useState(emptyAuthState);
-  const [initializing, setInitializing] = useState(true);
-  const [bootstrapping, setBootstrapping] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const clearAuthState = useCallback(() => {
-    setAuthState(emptyAuthState);
-  }, []);
-
-  const hydrateFromSession = useCallback(async (session) => {
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-
-    if (!session) {
-      clearAuthState();
-      setError(null);
-      setBootstrapping(false);
-      setInitializing(false);
-      return;
-    }
-
-    setBootstrapping(true);
-    setError(null);
-
-    try {
-      const nextAuthState = await bootstrapAuthState(session);
-
-      if (requestIdRef.current === requestId) {
-        setAuthState(nextAuthState);
-      }
-    } catch (authError) {
-      if (requestIdRef.current === requestId) {
-        setAuthState({
-          ...emptyAuthState,
-          session,
-          user: session.user ?? null,
-        });
-        setError(authError);
-      }
-    } finally {
-      if (requestIdRef.current === requestId) {
-        setBootstrapping(false);
-        setInitializing(false);
-      }
-    }
-  }, [clearAuthState]);
-
-  const refreshAuthState = useCallback(async () => {
-    setInitializing(true);
-
-    const { data, error: sessionError } = await getCurrentSession();
-
-    if (sessionError) {
-      setError(sessionError);
-      setInitializing(false);
-      return;
-    }
-
-    await hydrateFromSession(data.session);
-  }, [hydrateFromSession]);
+  const loading_state = isSubmitting || loading;
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function initializeAuth() {
-      const { data, error: sessionError } = await getCurrentSession();
-
-      if (!isMounted) {
-        return;
-      }
-
-      if (sessionError) {
-        setError(sessionError);
-        setInitializing(false);
-        return;
-      }
-
-      await hydrateFromSession(data.session);
-    }
-
-    initializeAuth();
-
-    const { data } = onAuthStateChange((_event, session) => {
-      window.setTimeout(() => {
-        if (isMounted) {
-          hydrateFromSession(session);
-        }
-      }, 0);
-    });
-
-    return () => {
-      isMounted = false;
-      data.subscription.unsubscribe();
-    };
-  }, [hydrateFromSession]);
-
-  const login = useCallback(async ({ email, password }) => {
-    setActionLoading(true);
-    setError(null);
-
-    try {
-      const { data, error: signInError } = await signInWithEmail({ email, password });
-
-      if (signInError) {
-        throw signInError;
-      }
-
-      if (data.session) {
-        await hydrateFromSession(data.session);
-      }
-
-      return data;
-    } catch (authError) {
-      setError(authError);
-      throw authError;
-    } finally {
-      setActionLoading(false);
-    }
-  }, [hydrateFromSession]);
-
-  const register = useCallback(async ({ email, password, metadata }) => {
-    setActionLoading(true);
-    setError(null);
-
-    try {
-      const { data, error: signUpError } = await signUpWithEmail({
-        email,
-        metadata,
-        password,
+    if (serverError) {
+      setError("root.server", {
+        message: serverError?.message ?? "Unable to create family. Please try again.",
+        type: "server",
       });
-
-      if (signUpError) {
-        throw signUpError;
-      }
-
-      if (data.session) {
-        await hydrateFromSession(data.session);
-      }
-
-      return data;
-    } catch (authError) {
-      setError(authError);
-      throw authError;
-    } finally {
-      setActionLoading(false);
     }
-  }, [hydrateFromSession]);
+  }, [serverError, setError]);
 
-  const logout = useCallback(async () => {
-    setActionLoading(true);
-    setError(null);
-
+  async function handleFormSubmit(values) {
     try {
-      const { error: signOutError } = await signOut();
-
-      if (signOutError) {
-        throw signOutError;
-      }
-
-      clearAuthState();
-    } catch (authError) {
-      setError(authError);
-      throw authError;
-    } finally {
-      setActionLoading(false);
+      await onSubmit(values.familyName.trim());
+    } catch (error) {
+      setError("root.server", {
+        message: error?.message ?? "Unable to create family. Please try again.",
+        type: "server",
+      });
     }
-  }, [clearAuthState]);
+  }
 
-  const sendPasswordReset = useCallback(async (email, redirectTo) => {
-    setActionLoading(true);
-    setError(null);
+  return (
+    <form className="space-y-4" noValidate onSubmit={handleSubmit(handleFormSubmit)}>
+      {errors.root?.server ? (
+        <div
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-left text-sm font-medium text-red-700"
+          role="alert"
+        >
+          {errors.root.server.message}
+        </div>
+      ) : null}
 
-    try {
-      const { data, error: resetError } = await sendPasswordResetEmail(email, redirectTo);
+      <AuthInput
+        autoComplete="off"
+        disabled={loading_state}
+        error={errors.familyName}
+        id="family-name"
+        label="Family Name"
+        placeholder="Enter your family name"
+        registration={register("familyName", {
+          maxLength: {
+            message: "Family name must not exceed 100 characters.",
+            value: 100,
+          },
+          minLength: {
+            message: "Family name must be at least 2 characters.",
+            value: 2,
+          },
+          required: "Family name is required.",
+        })}
+      />
 
-      if (resetError) {
-        throw resetError;
-      }
-
-      return data;
-    } catch (authError) {
-      setError(authError);
-      throw authError;
-    } finally {
-      setActionLoading(false);
-    }
-  }, []);
-
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  const hasPermission = useCallback(
-    (permissionKey) => {
-      if (authState.role === "owner") {
-        return true;
-      }
-
-      return Boolean(authState.permissions[permissionKey]);
-    },
-    [authState.permissions, authState.role]
+      <AuthButton loading={loading_state} loadingText="Creating family">
+        Create Family
+      </AuthButton>
+    </form>
   );
-
-  const value = useMemo(() => {
-    const isAuthenticated = Boolean(authState.session?.user);
-
-    return {
-      ...authState,
-      actionLoading,
-      bootstrapping,
-      clearError,
-      error,
-      hasFamily: Boolean(authState.family && authState.membership),
-      hasPermission,
-      initializing,
-      isAuthenticated,
-      isOwner: authState.role === "owner",
-      loading: initializing || bootstrapping,
-      login,
-      logout,
-      refreshAuthState,
-      register,
-      sendPasswordReset,
-    };
-  }, [
-    actionLoading,
-    authState,
-    bootstrapping,
-    clearError,
-    error,
-    hasPermission,
-    initializing,
-    login,
-    logout,
-    refreshAuthState,
-    register,
-    sendPasswordReset,
-  ]);
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 </file>
 
-<file path="src/features/auth/hooks/useAuth.js">
-import { useContext } from "react";
-
-import { AuthContext } from "../context/AuthContext";
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider.");
-  }
-
-  return context;
-}
+<file path="src/features/family/index.js">
+export { default as FamilySetupCard } from "./components/FamilySetupCard";
+export { default as FamilySetupForm } from "./components/FamilySetupForm";
+export { createFamily } from "./services/familyService";
 </file>
 
-<file path="src/features/auth/index.js">
-export { AuthProvider } from "./context/AuthContext";
-export { useAuth } from "./hooks/useAuth";
-export { default as ProtectedRoute } from "./routes/ProtectedRoute";
-export { default as PublicRoute } from "./routes/PublicRoute";
-</file>
-
-<file path="src/features/auth/routes/ProtectedRoute.jsx">
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-
-import AuthErrorState from "../components/AuthErrorState";
-import AuthLoadingScreen from "../components/AuthLoadingScreen";
-import { useAuth } from "../hooks/useAuth";
-
-export default function ProtectedRoute({
-  children,
-  redirectTo = "/",
-  requireFamily = false,
-  requiredPermission,
-  unauthorizedTo = "/dashboard",
-}) {
-  const location = useLocation();
-  const {
-    error,
-    hasFamily,
-    hasPermission,
-    isAuthenticated,
-    loading,
-    refreshAuthState,
-  } = useAuth();
-
-  if (loading) {
-    return <AuthLoadingScreen />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate replace state={{ from: location }} to={redirectTo} />;
-  }
-
-  if (error) {
-    return <AuthErrorState error={error} onRetry={refreshAuthState} />;
-  }
-
-  if (requireFamily && !hasFamily) {
-    return <Navigate replace to="/family-setup" />;
-  }
-
-  if (requiredPermission && !hasPermission(requiredPermission)) {
-    return <Navigate replace to={unauthorizedTo} />;
-  }
-
-  return children ?? <Outlet />;
-}
-</file>
-
-<file path="src/features/auth/routes/PublicRoute.jsx">
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-
-import AuthLoadingScreen from "../components/AuthLoadingScreen";
-import { useAuth } from "../hooks/useAuth";
-
-export default function PublicRoute({ children, redirectTo = "/dashboard" }) {
-  const location = useLocation();
-  const { isAuthenticated, loading } = useAuth();
-
-  if (loading) {
-    return <AuthLoadingScreen />;
-  }
-
-  if (isAuthenticated) {
-    const destination = location.state?.from?.pathname ?? redirectTo;
-    return <Navigate replace to={destination} />;
-  }
-
-  return children ?? <Outlet />;
-}
-</file>
-
-<file path="src/features/auth/services/authBootstrapService.js">
+<file path="src/features/family/services/familyService.js">
 import { supabase } from "../../../lib/supabase";
 
 const OWNER_ROLE = "owner";
+const ACTIVE_STATUS = "active";
 
-function mapPermissionDefinitions(permissionDefinitions, value) {
-  return permissionDefinitions.reduce((permissions, permissionDefinition) => {
-    permissions[permissionDefinition.permission_key] = value;
-    return permissions;
-  }, {});
-}
-
-function normalizePermissionResult(result) {
-  if (result.error) {
-    throw result.error;
+export async function createFamily(familyName, userId) {
+  if (!familyName || !userId) {
+    throw new Error("Family name and user ID are required.");
   }
 
-  return Boolean(result.data);
-}
-
-export async function loadProfile(userId) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
+  if (familyName.trim().length < 2 || familyName.trim().length > 100) {
+    throw new Error("Family name must be between 2 and 100 characters.");
   }
 
-  return data;
-}
+  // Create family record
+  const { data: familyData, error: familyError } = await supabase
+    .from("families")
+    .insert({
+      name: familyName.trim(),
+      owner_user_id: userId,
+      default_currency: "USD",
+      fiscal_month_start_day: 1,
+      status: "active",
+    })
+    .select()
+    .single();
 
-export async function loadActiveFamilyMembership(userId) {
-  const { data, error } = await supabase
+  if (familyError) {
+    throw familyError;
+  }
+
+  if (!familyData) {
+    throw new Error("Failed to create family record.");
+  }
+
+  // Create owner family_members record
+  const { data: memberData, error: memberError } = await supabase
     .from("family_members")
-    .select("*, families(*)")
-    .eq("user_id", userId)
-    .eq("membership_status", "active")
-    .order("joined_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .insert({
+      family_id: familyData.id,
+      user_id: userId,
+      base_role: OWNER_ROLE,
+      membership_status: ACTIVE_STATUS,
+      joined_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
 
-  if (error) {
-    throw error;
+  if (memberError) {
+    throw memberError;
   }
 
-  return data;
-}
-
-export async function loadPermissionDefinitions() {
-  const { data, error } = await supabase
-    .from("permission_definitions")
-    .select("permission_key, module, description, is_assignable")
-    .eq("is_assignable", true)
-    .order("permission_key", { ascending: true });
-
-  if (error) {
-    throw error;
+  if (!memberData) {
+    throw new Error("Failed to create family membership record.");
   }
-
-  return data ?? [];
-}
-
-export async function loadPermissions({ familyId, role, permissionDefinitions }) {
-  if (!familyId || !role) {
-    return mapPermissionDefinitions(permissionDefinitions, false);
-  }
-
-  if (role === OWNER_ROLE) {
-    return mapPermissionDefinitions(permissionDefinitions, true);
-  }
-
-  const permissionResults = await Promise.all(
-    permissionDefinitions.map((permissionDefinition) =>
-      supabase.rpc("has_permission", {
-        p_family_id: familyId,
-        p_permission_key: permissionDefinition.permission_key,
-      })
-    )
-  );
-
-  return permissionDefinitions.reduce((permissions, permissionDefinition, index) => {
-    permissions[permissionDefinition.permission_key] = normalizePermissionResult(
-      permissionResults[index]
-    );
-
-    return permissions;
-  }, {});
-}
-
-export async function bootstrapAuthState(session) {
-  const user = session?.user ?? null;
-
-  if (!user) {
-    return {
-      family: null,
-      membership: null,
-      permissionDefinitions: [],
-      permissions: {},
-      profile: null,
-      role: null,
-      session: null,
-      user: null,
-    };
-  }
-
-  const [profile, membership, permissionDefinitions] = await Promise.all([
-    loadProfile(user.id),
-    loadActiveFamilyMembership(user.id),
-    loadPermissionDefinitions(),
-  ]);
-
-  const family = membership?.families ?? null;
-  const role = membership?.base_role ?? null;
-  const permissions = await loadPermissions({
-    familyId: membership?.family_id,
-    permissionDefinitions,
-    role,
-  });
 
   return {
-    family,
-    membership,
-    permissionDefinitions,
-    permissions,
-    profile,
-    role,
-    session,
-    user,
+    family: familyData,
+    member: memberData,
   };
 }
 </file>
 
-<file path="src/features/auth/services/authService.js">
-import { supabase } from "../../../lib/supabase";
+<file path="src/pages/family/FamilySetup.jsx">
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { AuthLayout, useAuth } from "../../features/auth";
+import FamilySetupCard from "../../features/family/components/FamilySetupCard";
+import { createFamily } from "../../features/family/services/familyService";
 
-export async function getCurrentSession() {
-  return supabase.auth.getSession();
-}
+export default function FamilySetup() {
+  const navigate = useNavigate();
+  const { actionLoading, error, profile, refreshAuthState, user } = useAuth();
 
-export function onAuthStateChange(callback) {
-  return supabase.auth.onAuthStateChange(callback);
-}
+  useEffect(() => {
+    // If user somehow has a family, redirect to dashboard
+    // This is a safety check
+    if (profile && profile.family_id) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [profile, navigate]);
 
-export async function signInWithEmail({ email, password }) {
-  return supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-}
+  async function handleCreateFamily(familyName) {
+    if (!user?.id) {
+      throw new Error("User session not found. Please refresh and try again.");
+    }
 
-export async function signUpWithEmail({ email, password, metadata = {} }) {
-  return supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: metadata,
-    },
-  });
-}
+    await createFamily(familyName, user.id);
 
-export async function signOut() {
-  return supabase.auth.signOut();
-}
+    // Refresh auth state to load the new family
+    await refreshAuthState();
 
-export async function sendPasswordResetEmail(email, redirectTo) {
-  const options = redirectTo ? { redirectTo } : undefined;
+    // Redirect to dashboard
+    navigate("/dashboard", { replace: true });
+  }
 
-  return supabase.auth.resetPasswordForEmail(email, options);
-}
-</file>
-
-<file path="src/pages/auth/ForgotPassword.jsx">
-export default function ForgotPassword() {
   return (
-    <div className="flex min-h-screen items-center justify-center px-5">
-      Forgot Password Page
-    </div>
+    <AuthLayout
+      title="Create Your Family"
+      subtitle="Set up your family to start managing expenses"
+      backTo={null}
+      showBackButton={false}
+    >
+      <FamilySetupCard
+        error={error}
+        loading={actionLoading}
+        onSubmit={handleCreateFamily}
+      />
+    </AuthLayout>
   );
 }
 </file>
@@ -896,231 +492,62 @@ Database architecture completed.
 No schema changes allowed without approval.
 </file>
 
-<file path="docs/decisions/auth-plan.md">
-# Authentication Plan
+<file path="docs/decisions/ai-handoff.md">
+# AI Handoff Document
 
-## Phase
+Current Status:
 
-Phase 1A
+Completed:
 
-Status:
-Approved
+* Database Architecture
+* Supabase Configuration
+* Authentication Foundation
+* Authentication UI
+* Documentation System
+* GitHub Repository Setup
 
-## Authentication Provider
+Current Phase:
 
-AuthProvider
+Authentication UI Cleanup
 
-Responsibilities:
+Pending UI Cleanup:
 
-* Session Management
-* User State
-* Profile Loading
-* Family Loading
-* Role Loading
-* Permission Loading
+* Remove back button from Login page
+* Remove back button from Register page
+* Keep back button on Forgot Password page
 
-## Context
+Next Phase:
 
-AuthContext
+Phase 3 - Family Creation
 
-Provides:
+Requirements:
 
-* user
-* profile
-* family
-* role
-* permissions
-* session
-* loading
-* error
+After successful login:
 
-## Hook
+1. Check if user belongs to a family.
+2. If user does not belong to a family:
 
-useAuth()
+   * Redirect to Create Family screen.
+3. Create Family screen:
 
-Single source of truth.
+   * Family Name
+   * Create Button
+4. Creator becomes owner automatically.
+5. Create record in:
 
-All components must consume auth through useAuth().
+   * families
+   * family_members
+6. Redirect to Dashboard.
 
-## Route Protection
+Important Rules:
 
-PublicRoute
-
-Routes:
-
-* Login
-* Register
-* Forgot Password
-
-ProtectedRoute
-
-Routes:
-
-* Dashboard
-* Expenses
-* Want To Buy
-* Budgets
-* Notifications
-* Settings
-
-## Session Flow
-
-App Start
-↓
-Restore Session
-↓
-Load Profile
-↓
-Load Family
-↓
-Load Role
-↓
-Load Permissions
-↓
-Application Ready
-
-## Permission Strategy
-
-Owner:
-Receives all permissions automatically.
-
-Regular User:
-No permissions by default.
-
-Authorized User:
-Permissions loaded through existing has_permission RPC.
-
-Direct reads from member_permission_grants are prohibited.
-</file>
-
-<file path="docs/roadmap/roadmap.md">
-# Development Roadmap
-
-## Completed
-
-### Infrastructure
-
-* Supabase Project
-* Environment Variables
-* Database Migration
-* Tables
-* Functions
-* Triggers
-* Seed Data
-* RLS Policies
-
-### Documentation
-
-* PROJECT_CONTEXT.md
-* AI_DEVELOPMENT_RULES.md
-* App Flow Diagram
-* Phase 1A Authentication Architecture
-
-### Source Control
-
-* Git
-* GitHub Repository
-
-### Phase 1B Authentication Foundation
-
-* AuthContext
-* AuthProvider
-* useAuth
-* ProtectedRoute
-* PublicRoute
-* Session Persistence Foundation
-* Auth State Listener
-* Loading State Management
-* Error State Management
-* Profile Loading
-* Family Membership Loading
-* Role Loading
-* Permission Loading through existing has_permission RPC
-
----
-
-## Current Phase
-
-Phase 2
-
-Authentication Pages
-
-Status:
-Ready For Implementation
-
----
-
-## Upcoming Phases
-
-### Phase 3
-
-Family Creation
-
-* Create Family
-* Become Owner
-
-### Phase 4
-
-Dashboard
-
-* Expense Management
-* Want To Buy
-
-### Phase 5
-
-Expense Management
-
-* Expense CRUD
-* Month Selector
-* Expense History
-
-### Phase 6
-
-Want To Buy
-
-* Shared Shopping List
-* Quantity
-* Completion
-
-### Phase 7
-
-Permissions
-
-* Grant Access
-* Permission Toggles
-
-### Phase 8
-
-Notifications
-
-* Notification Center
-
-### Phase 9
-
-Budgets
-
-* Monthly Budget Management
-
-### Phase 10
-
-Money Distribution
-
-* Money Tracking
-* Distribution History
-
-### Phase 11
-
-Theme Customization
-
-* Owner Theme Settings
-
-### Phase 12
-
-Testing & Deployment
-
-* QA
-* Performance
-* Production Deployment
+* Never modify database schema.
+* Never modify RLS policies.
+* Never create new tables.
+* Use existing database architecture.
+* Mobile-first UI.
+* SVG icons only.
+* Update PROJECT_CONTEXT.md after every phase.
 </file>
 
 <file path="eslint.config.js">
@@ -1437,27 +864,695 @@ If you are developing a production application, we recommend using TypeScript wi
 }
 </file>
 
-<file path="src/App.jsx">
-import { AuthProvider } from "./features/auth";
-import AppRoutes from "./routes/AppRoutes";
-
-function App() {
-  return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
-  );
-}
-
-export default App;
-</file>
-
 <file path="src/assets/react.svg">
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
 </file>
 
 <file path="src/assets/vite.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="src/features/auth/components/AuthButton.jsx">
+export default function AuthButton({ children, loading = false, loadingText, type = "submit" }) {
+  return (
+    <button
+      className="inline-flex h-12 w-full items-center justify-center rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-neutral-400"
+      disabled={loading}
+      type={type}
+    >
+      {loading ? (
+        <span className="flex items-center gap-2">
+          <span
+            className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+            aria-hidden="true"
+          />
+          {loadingText ?? "Please wait"}
+        </span>
+      ) : (
+        children
+      )}
+    </button>
+  );
+}
+</file>
+
+<file path="src/features/auth/components/AuthCard.jsx">
+export default function AuthCard({ children }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+      {children}
+    </div>
+  );
+}
+</file>
+
+<file path="src/features/auth/components/AuthErrorState.jsx">
+function getErrorMessage(error) {
+  if (!error) {
+    return "Something went wrong while loading authentication state.";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return error.message ?? "Something went wrong while loading authentication state.";
+}
+
+export default function AuthErrorState({
+  error,
+  onRetry,
+  title = "Authentication could not be loaded",
+}) {
+  return (
+    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
+      <div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
+        <div className="rounded-lg border border-red-200 bg-white p-5 text-left shadow-sm">
+          <div
+            className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600"
+            aria-hidden="true"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+            </svg>
+          </div>
+          <h1 className="text-lg font-semibold text-slate-950">{title}</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{getErrorMessage(error)}</p>
+          {onRetry ? (
+            <button
+              className="mt-5 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+              type="button"
+              onClick={onRetry}
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </main>
+  );
+}
+</file>
+
+<file path="src/features/auth/components/AuthInput.jsx">
+export default function AuthInput({
+  autoComplete,
+  disabled,
+  error,
+  id,
+  label,
+  placeholder,
+  registration,
+  type = "text",
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-left text-sm font-medium text-black" htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        autoComplete={autoComplete}
+        className="h-12 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm text-black outline-none transition placeholder:text-neutral-400 focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500"
+        disabled={disabled}
+        placeholder={placeholder}
+        type={type}
+        aria-describedby={error ? `${id}-error` : undefined}
+        aria-invalid={Boolean(error)}
+        {...registration}
+      />
+      {error ? (
+        <p className="mt-2 text-left text-xs font-medium text-red-600" id={`${id}-error`}>
+          {error.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+</file>
+
+<file path="src/features/auth/components/AuthLoadingScreen.jsx">
+export default function AuthLoadingScreen({ message = "Loading your session" }) {
+  return (
+    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
+      <div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col items-center justify-center text-center">
+        <div
+          className="mb-5 h-11 w-11 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"
+          aria-hidden="true"
+        />
+        <p className="text-sm font-medium text-slate-600">{message}</p>
+      </div>
+    </main>
+  );
+}
+</file>
+
+<file path="src/features/auth/context/AuthContext.jsx">
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  getCurrentSession,
+  onAuthStateChange,
+  sendPasswordResetEmail,
+  signInWithEmail,
+  signOut,
+  signUpWithEmail,
+} from "../services/authService";
+import { bootstrapAuthState } from "../services/authBootstrapService";
+
+const emptyAuthState = {
+  family: null,
+  membership: null,
+  permissionDefinitions: [],
+  permissions: {},
+  profile: null,
+  role: null,
+  session: null,
+  user: null,
+};
+
+export const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const requestIdRef = useRef(0);
+  const [authState, setAuthState] = useState(emptyAuthState);
+  const [initializing, setInitializing] = useState(true);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const clearAuthState = useCallback(() => {
+    setAuthState(emptyAuthState);
+  }, []);
+
+  const hydrateFromSession = useCallback(async (session) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    if (!session) {
+      clearAuthState();
+      setError(null);
+      setBootstrapping(false);
+      setInitializing(false);
+      return;
+    }
+
+    setBootstrapping(true);
+    setError(null);
+
+    try {
+      const nextAuthState = await bootstrapAuthState(session);
+
+      if (requestIdRef.current === requestId) {
+        setAuthState(nextAuthState);
+      }
+    } catch (authError) {
+      if (requestIdRef.current === requestId) {
+        setAuthState({
+          ...emptyAuthState,
+          session,
+          user: session.user ?? null,
+        });
+        setError(authError);
+      }
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setBootstrapping(false);
+        setInitializing(false);
+      }
+    }
+  }, [clearAuthState]);
+
+  const refreshAuthState = useCallback(async () => {
+    setInitializing(true);
+
+    const { data, error: sessionError } = await getCurrentSession();
+
+    if (sessionError) {
+      setError(sessionError);
+      setInitializing(false);
+      return;
+    }
+
+    await hydrateFromSession(data.session);
+  }, [hydrateFromSession]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initializeAuth() {
+      const { data, error: sessionError } = await getCurrentSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (sessionError) {
+        setError(sessionError);
+        setInitializing(false);
+        return;
+      }
+
+      await hydrateFromSession(data.session);
+    }
+
+    initializeAuth();
+
+    const { data } = onAuthStateChange((_event, session) => {
+      window.setTimeout(() => {
+        if (isMounted) {
+          hydrateFromSession(session);
+        }
+      }, 0);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [hydrateFromSession]);
+
+  const login = useCallback(async ({ email, password }) => {
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: signInError } = await signInWithEmail({ email, password });
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      if (data.session) {
+        await hydrateFromSession(data.session);
+      }
+
+      return data;
+    } catch (authError) {
+      setError(authError);
+      throw authError;
+    } finally {
+      setActionLoading(false);
+    }
+  }, [hydrateFromSession]);
+
+  const register = useCallback(async ({ email, password, metadata }) => {
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: signUpError } = await signUpWithEmail({
+        email,
+        metadata,
+        password,
+      });
+
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      if (data.session) {
+        await hydrateFromSession(data.session);
+      }
+
+      return data;
+    } catch (authError) {
+      setError(authError);
+      throw authError;
+    } finally {
+      setActionLoading(false);
+    }
+  }, [hydrateFromSession]);
+
+  const logout = useCallback(async () => {
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const { error: signOutError } = await signOut();
+
+      if (signOutError) {
+        throw signOutError;
+      }
+
+      clearAuthState();
+    } catch (authError) {
+      setError(authError);
+      throw authError;
+    } finally {
+      setActionLoading(false);
+    }
+  }, [clearAuthState]);
+
+  const sendPasswordReset = useCallback(async (email, redirectTo) => {
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: resetError } = await sendPasswordResetEmail(email, redirectTo);
+
+      if (resetError) {
+        throw resetError;
+      }
+
+      return data;
+    } catch (authError) {
+      setError(authError);
+      throw authError;
+    } finally {
+      setActionLoading(false);
+    }
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const hasPermission = useCallback(
+    (permissionKey) => {
+      if (authState.role === "owner") {
+        return true;
+      }
+
+      return Boolean(authState.permissions[permissionKey]);
+    },
+    [authState.permissions, authState.role]
+  );
+
+  const value = useMemo(() => {
+    const isAuthenticated = Boolean(authState.session?.user);
+
+    return {
+      ...authState,
+      actionLoading,
+      bootstrapping,
+      clearError,
+      error,
+      hasFamily: Boolean(authState.family && authState.membership),
+      hasPermission,
+      initializing,
+      isAuthenticated,
+      isOwner: authState.role === "owner",
+      loading: initializing || bootstrapping,
+      login,
+      logout,
+      refreshAuthState,
+      register,
+      sendPasswordReset,
+    };
+  }, [
+    actionLoading,
+    authState,
+    bootstrapping,
+    clearError,
+    error,
+    hasPermission,
+    initializing,
+    login,
+    logout,
+    refreshAuthState,
+    register,
+    sendPasswordReset,
+  ]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+</file>
+
+<file path="src/features/auth/hooks/useAuth.js">
+import { useContext } from "react";
+
+import { AuthContext } from "../context/AuthContext";
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider.");
+  }
+
+  return context;
+}
+</file>
+
+<file path="src/features/auth/routes/ProtectedRoute.jsx">
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+
+import AuthErrorState from "../components/AuthErrorState";
+import AuthLoadingScreen from "../components/AuthLoadingScreen";
+import { useAuth } from "../hooks/useAuth";
+
+export default function ProtectedRoute({
+  children,
+  redirectTo = "/",
+  requireFamily = false,
+  requiredPermission,
+  unauthorizedTo = "/dashboard",
+}) {
+  const location = useLocation();
+  const {
+    error,
+    hasFamily,
+    hasPermission,
+    isAuthenticated,
+    loading,
+    refreshAuthState,
+  } = useAuth();
+
+  if (loading) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate replace state={{ from: location }} to={redirectTo} />;
+  }
+
+  if (error) {
+    return <AuthErrorState error={error} onRetry={refreshAuthState} />;
+  }
+
+  if (requireFamily && !hasFamily) {
+    return <Navigate replace to="/family-setup" />;
+  }
+
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    return <Navigate replace to={unauthorizedTo} />;
+  }
+
+  return children ?? <Outlet />;
+}
+</file>
+
+<file path="src/features/auth/routes/PublicRoute.jsx">
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+
+import AuthLoadingScreen from "../components/AuthLoadingScreen";
+import { useAuth } from "../hooks/useAuth";
+
+export default function PublicRoute({ children, redirectTo = "/dashboard" }) {
+  const location = useLocation();
+  const { hasFamily, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (isAuthenticated) {
+    if (!hasFamily) {
+      return <Navigate replace to="/family/setup" />;
+    }
+
+    const destination = location.state?.from?.pathname ?? redirectTo;
+    return <Navigate replace to={destination} />;
+  }
+
+  return children ?? <Outlet />;
+}
+</file>
+
+<file path="src/features/auth/services/authBootstrapService.js">
+import { supabase } from "../../../lib/supabase";
+
+const OWNER_ROLE = "owner";
+
+function mapPermissionDefinitions(permissionDefinitions, value) {
+  return permissionDefinitions.reduce((permissions, permissionDefinition) => {
+    permissions[permissionDefinition.permission_key] = value;
+    return permissions;
+  }, {});
+}
+
+function normalizePermissionResult(result) {
+  if (result.error) {
+    throw result.error;
+  }
+
+  return Boolean(result.data);
+}
+
+export async function loadProfile(userId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function loadActiveFamilyMembership(userId) {
+  const { data, error } = await supabase
+    .from("family_members")
+    .select("*, families(*)")
+    .eq("user_id", userId)
+    .eq("membership_status", "active")
+    .order("joined_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function loadPermissionDefinitions() {
+  const { data, error } = await supabase
+    .from("permission_definitions")
+    .select("permission_key, module, description, is_assignable")
+    .eq("is_assignable", true)
+    .order("permission_key", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function loadPermissions({ familyId, role, permissionDefinitions }) {
+  if (!familyId || !role) {
+    return mapPermissionDefinitions(permissionDefinitions, false);
+  }
+
+  if (role === OWNER_ROLE) {
+    return mapPermissionDefinitions(permissionDefinitions, true);
+  }
+
+  const permissionResults = await Promise.all(
+    permissionDefinitions.map((permissionDefinition) =>
+      supabase.rpc("has_permission", {
+        p_family_id: familyId,
+        p_permission_key: permissionDefinition.permission_key,
+      })
+    )
+  );
+
+  return permissionDefinitions.reduce((permissions, permissionDefinition, index) => {
+    permissions[permissionDefinition.permission_key] = normalizePermissionResult(
+      permissionResults[index]
+    );
+
+    return permissions;
+  }, {});
+}
+
+export async function bootstrapAuthState(session) {
+  const user = session?.user ?? null;
+
+  if (!user) {
+    return {
+      family: null,
+      membership: null,
+      permissionDefinitions: [],
+      permissions: {},
+      profile: null,
+      role: null,
+      session: null,
+      user: null,
+    };
+  }
+
+  const [profile, membership, permissionDefinitions] = await Promise.all([
+    loadProfile(user.id),
+    loadActiveFamilyMembership(user.id),
+    loadPermissionDefinitions(),
+  ]);
+
+  const family = membership?.families ?? null;
+  const role = membership?.base_role ?? null;
+  const permissions = await loadPermissions({
+    familyId: membership?.family_id,
+    permissionDefinitions,
+    role,
+  });
+
+  return {
+    family,
+    membership,
+    permissionDefinitions,
+    permissions,
+    profile,
+    role,
+    session,
+    user,
+  };
+}
+</file>
+
+<file path="src/features/auth/services/authService.js">
+import { supabase } from "../../../lib/supabase";
+
+export async function getCurrentSession() {
+  return supabase.auth.getSession();
+}
+
+export function onAuthStateChange(callback) {
+  return supabase.auth.onAuthStateChange(callback);
+}
+
+export async function signInWithEmail({ email, password }) {
+  return supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+}
+
+export async function signUpWithEmail({ email, password, metadata = {} }) {
+  return supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: metadata,
+    },
+  });
+}
+
+export async function signOut() {
+  return supabase.auth.signOut();
+}
+
+export async function sendPasswordResetEmail(email, redirectTo) {
+  const options = redirectTo ? { redirectTo } : undefined;
+
+  return supabase.auth.resetPasswordForEmail(email, options);
+}
 </file>
 
 <file path="src/index.css">
@@ -1576,29 +1671,6 @@ code {
 }
 </file>
 
-<file path="src/lib/supabase.js">
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
-  );
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-    persistSession: true,
-    storageKey: "family-expense-auth",
-  },
-});
-</file>
-
 <file path="src/main.jsx">
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -1610,88 +1682,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
-</file>
-
-<file path="src/pages/auth/Login.jsx">
-export default function Login() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      Login Page
-    </div>
-  );
-}
-</file>
-
-<file path="src/pages/auth/Register.jsx">
-export default function Register() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      Register Page
-    </div>
-  );
-}
-</file>
-
-<file path="src/routes/AppRoutes.jsx">
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-
-import { ProtectedRoute, PublicRoute, useAuth } from "../features/auth";
-import ForgotPassword from "../pages/auth/ForgotPassword";
-import Login from "../pages/auth/Login";
-import Register from "../pages/auth/Register";
-
-function DashboardPlaceholder() {
-  const { family, logout, profile, role } = useAuth();
-
-  return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
-      <section className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm">
-          <p className="text-sm font-medium text-emerald-700">Authentication ready</p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-950">
-            {profile?.display_name || profile?.email || "Signed in"}
-          </h1>
-          <dl className="mt-5 space-y-3 text-sm text-slate-600">
-            <div>
-              <dt className="font-medium text-slate-950">Family</dt>
-              <dd>{family?.name ?? "Family setup pending"}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-950">Role</dt>
-              <dd>{role ?? "No active role yet"}</dd>
-            </div>
-          </dl>
-          <button
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-            type="button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-export default function AppRoutes() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<PublicRoute />}>
-          <Route path="/" element={<Login />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-        </Route>
-        <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<DashboardPlaceholder />} />
-        </Route>
-        <Route path="*" element={<Navigate replace to="/" />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
 </file>
 
 <file path="supabase/migrations/migration_001_initial_schema.sql">
@@ -3060,6 +3050,1022 @@ export default defineConfig({
 })
 </file>
 
+<file path="docs/decisions/auth-plan.md">
+# Authentication Plan
+
+## Phase
+
+Phase 1A
+
+Status:
+Approved
+
+## Current Implementation Status
+
+Phase 1A:
+Authentication Architecture Approved
+
+Phase 1B:
+Authentication Foundation Complete
+
+Phase 2:
+Authentication UI Implementation Complete
+
+## Authentication Provider
+
+AuthProvider
+
+Responsibilities:
+
+* Session Management
+* User State
+* Profile Loading
+* Family Loading
+* Role Loading
+* Permission Loading
+
+## Context
+
+AuthContext
+
+Provides:
+
+* user
+* profile
+* family
+* role
+* permissions
+* session
+* loading
+* error
+
+## Hook
+
+useAuth()
+
+Single source of truth.
+
+All components must consume auth through useAuth().
+
+## Route Protection
+
+PublicRoute
+
+Routes:
+
+* Login
+* Register
+* Forgot Password
+
+ProtectedRoute
+
+Routes:
+
+* Dashboard
+* Expenses
+* Want To Buy
+* Budgets
+* Notifications
+* Settings
+
+## Session Flow
+
+App Start
+↓
+Restore Session
+↓
+Load Profile
+↓
+Load Family
+↓
+Load Role
+↓
+Load Permissions
+↓
+Application Ready
+
+## Permission Strategy
+
+Owner:
+Receives all permissions automatically.
+
+Regular User:
+No permissions by default.
+
+Authorized User:
+Permissions loaded through existing has_permission RPC.
+
+Direct reads from member_permission_grants are prohibited.
+
+## Phase 2 UI Decisions
+
+Authentication screens follow the approved app flow diagram:
+
+* Clean white background
+* Black primary text
+* Mobile-first centered card
+* Stacked form inputs
+* Black primary action button
+* Simple text links between Login, Register, and Forgot Password
+* Loading states on all submit actions
+* Inline validation and server error states
+* Forgot Password success message after reset email request
+
+## Phase 2 Completed Files
+
+Created:
+
+* src/features/auth/components/AuthLayout.jsx
+* src/features/auth/components/AuthCard.jsx
+* src/features/auth/components/AuthInput.jsx
+* src/features/auth/components/AuthButton.jsx
+
+Modified:
+
+* src/features/auth/index.js
+* src/pages/auth/Login.jsx
+* src/pages/auth/Register.jsx
+* src/pages/auth/ForgotPassword.jsx
+* PROJECT_CONTEXT.MD
+* docs/roadmap/roadmap.md
+* docs/decisions/auth-plan.md
+
+## Next Recommendation
+
+Next Phase:
+Phase 3 - Family Creation
+
+Recommended scope:
+
+* Create Family page
+* Family creation service
+* Owner membership creation
+* Redirect authenticated users without active family to family setup
+* Refresh AuthProvider state after family creation
+* Keep database schema, functions, triggers, and RLS unchanged
+
+---
+
+## Phase 3 Family Creation
+
+Status:
+Complete
+
+### Implementation Decisions
+
+* Creator always becomes Owner
+* Family name required (2-100 characters)
+* No notifications in Phase 3
+* No deletion functionality
+* No invitation functionality
+* One family per user (current design)
+* Creator auto-receives all permissions
+
+### First-Time User Redirect Flow
+
+Unauthenticated User
+  ↓
+  Login
+  ↓
+  Authenticated + No Family
+  ↓
+  /family/setup (PublicRoute redirects)
+  ↓
+  Create Family
+  ↓
+  Refresh Auth State
+  ↓
+  /dashboard
+
+### Route Changes
+
+Public Routes:
+* /login → Login (no family required)
+* /register → Register (no family required)
+* /forgot-password → ForgotPassword (no family required)
+
+Protected Routes (requireFamily=false):
+* /family/setup → FamilySetup (authentication required, family not required)
+
+Protected Routes (requireFamily=true):
+* /dashboard → Dashboard (authentication required, family required)
+
+### Public Route Enhancement
+
+When authenticated user arrives at public route:
+
+1. Check if user has active family
+2. If no family → redirect to /family/setup
+3. If has family → redirect to /dashboard
+
+### Auth State Refresh
+
+After successful family creation:
+
+1. familyService.createFamily() returns family and member objects
+2. FamilySetup page calls refreshAuthState()
+3. AuthContext re-runs bootstrapAuthState()
+4. bootstrapAuthState loads:
+   - Profile (already loaded)
+   - Active family membership (NEW)
+   - Permission definitions
+   - Permissions (ALL for owner)
+5. AuthContext updates hasFamily to true
+6. User redirected to /dashboard
+
+### Phase 3 Completed Files
+
+Created:
+
+* src/features/family/index.js
+* src/features/family/components/FamilySetupForm.jsx
+* src/features/family/components/FamilySetupCard.jsx
+* src/features/family/services/familyService.js
+* src/pages/family/FamilySetup.jsx
+
+Modified:
+
+* src/routes/AppRoutes.jsx
+* src/features/auth/routes/PublicRoute.jsx
+* PROJECT_CONTEXT.MD
+* docs/roadmap/roadmap.md
+* docs/decisions/auth-plan.md
+
+### Database Operations
+
+createFamily(familyName, userId):
+
+1. Validation:
+   - familyName required
+   - familyName 2-100 characters
+   - userId required
+
+2. Create families record:
+   - name: familyName (trimmed)
+   - owner_user_id: userId
+   - default_currency: USD
+   - fiscal_month_start_day: 1
+   - status: active
+
+3. Create family_members record:
+   - family_id: created family ID
+   - user_id: userId
+   - base_role: owner
+   - membership_status: active
+   - joined_at: NOW()
+
+4. Return family and member objects
+
+### Next Phase
+
+Next Phase:
+Phase 4 - Dashboard (Expense Management + Want To Buy selector)
+
+Prerequisites:
+- Phase 1A: Authentication Architecture (Complete)
+- Phase 1B: Authentication Foundation (Complete)
+- Phase 2: Authentication UI (Complete)
+- Phase 3: Family Creation (Complete)
+
+Estimated Work:
+- 3-5 components
+- 1 main dashboard page
+- Basic month selector
+- Module selection UI
+</file>
+
+<file path="src/App.jsx">
+import { AuthProvider } from "./features/auth";
+import AppRoutes from "./routes/AppRoutes";
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  );
+}
+
+export default App;
+</file>
+
+<file path="src/features/auth/components/AuthLayout.jsx">
+import { Link, useNavigate } from "react-router-dom";
+
+export default function AuthLayout({ backTo, children, showBackButton = true, subtitle, title }) {
+  const navigate = useNavigate();
+
+  function handleBack() {
+    if (backTo) {
+      navigate(backTo);
+      return;
+    }
+
+    navigate(-1);
+  }
+
+  return (
+    <main className="min-h-screen bg-white px-5 py-6 text-black sm:px-6">
+      <section className="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-sm flex-col justify-center">
+        {showBackButton && (
+          <div className="mb-5 flex min-h-10 items-center">
+            <button
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-black transition hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+              type="button"
+              aria-label="Go back"
+              onClick={handleBack}
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        <div className="mb-7 text-center">
+          <h1 className="text-2xl font-semibold tracking-normal text-black">{title}</h1>
+          {subtitle ? <p className="mt-2 text-sm text-neutral-600">{subtitle}</p> : null}
+        </div>
+
+        {children}
+
+        <p className="mt-8 text-center text-xs text-neutral-500">
+          Family Expense Management
+        </p>
+      </section>
+    </main>
+  );
+}
+
+export function AuthTextLink({ children, to }) {
+  return (
+    <Link
+      className="font-semibold text-blue-700 transition hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      to={to}
+    >
+      {children}
+    </Link>
+  );
+}
+</file>
+
+<file path="src/features/auth/index.js">
+export { default as AuthButton } from "./components/AuthButton";
+export { default as AuthCard } from "./components/AuthCard";
+export { default as AuthInput } from "./components/AuthInput";
+export { default as AuthLayout, AuthTextLink } from "./components/AuthLayout";
+export { AuthProvider } from "./context/AuthContext";
+export { useAuth } from "./hooks/useAuth";
+export { default as ProtectedRoute } from "./routes/ProtectedRoute";
+export { default as PublicRoute } from "./routes/PublicRoute";
+</file>
+
+<file path="src/lib/supabase.js">
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    "Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
+    persistSession: true,
+    storageKey: "family-expense-auth",
+  },
+});
+</file>
+
+<file path="src/pages/auth/ForgotPassword.jsx">
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+
+import {
+  AuthButton,
+  AuthCard,
+  AuthInput,
+  AuthLayout,
+  AuthTextLink,
+  useAuth,
+} from "../../features/auth";
+
+function getErrorMessage(error) {
+  return error?.message ?? "Unable to send reset instructions. Please try again.";
+}
+
+export default function ForgotPassword() {
+  const { actionLoading, clearError, sendPasswordReset } = useAuth();
+  const [successMessage, setSuccessMessage] = useState("");
+  const {
+    formState: { errors, isSubmitting },
+    handleSubmit,
+    register,
+    setError,
+  } = useForm({
+    defaultValues: {
+      email: "",
+    },
+  });
+
+  const loading = isSubmitting || actionLoading;
+
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
+
+  async function onSubmit(values) {
+    setSuccessMessage("");
+
+    try {
+      const redirectTo = `${window.location.origin}/login`;
+
+      await sendPasswordReset(values.email.trim(), redirectTo);
+      setSuccessMessage("Password reset link sent. Please check your email.");
+    } catch (error) {
+      setError("root.server", {
+        message: getErrorMessage(error),
+        type: "server",
+      });
+    }
+  }
+
+  return (
+    <AuthLayout
+      title="Reset Password"
+      subtitle="Enter your email to receive a reset link"
+      backTo="/"
+    >
+      <AuthCard>
+        <form className="space-y-4" noValidate onSubmit={handleSubmit(onSubmit)}>
+          {errors.root?.server ? (
+            <div
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-left text-sm font-medium text-red-700"
+              role="alert"
+            >
+              {errors.root.server.message}
+            </div>
+          ) : null}
+
+          {successMessage ? (
+            <div
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-800"
+              role="status"
+            >
+              {successMessage}
+            </div>
+          ) : null}
+
+          <AuthInput
+            autoComplete="email"
+            disabled={loading}
+            error={errors.email}
+            id="forgot-password-email"
+            label="Email"
+            placeholder="Email"
+            type="email"
+            registration={register("email", {
+              pattern: {
+                message: "Enter a valid email address.",
+                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+              },
+              required: "Email is required.",
+            })}
+          />
+
+          <AuthButton loading={loading} loadingText="Sending link">
+            Send Reset Link
+          </AuthButton>
+        </form>
+
+        <p className="mt-7 text-center text-xs text-neutral-600">
+          Remember your password? <AuthTextLink to="/">Login</AuthTextLink>
+        </p>
+      </AuthCard>
+    </AuthLayout>
+  );
+}
+</file>
+
+<file path="src/routes/AppRoutes.jsx">
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+
+import { ProtectedRoute, PublicRoute, useAuth } from "../features/auth";
+import ForgotPassword from "../pages/auth/ForgotPassword";
+import Login from "../pages/auth/Login";
+import Register from "../pages/auth/Register";
+import FamilySetup from "../pages/family/FamilySetup";
+
+function DashboardPlaceholder() {
+  const { family, logout, profile, role } = useAuth();
+
+  return (
+    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
+      <section className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm">
+          <p className="text-sm font-medium text-emerald-700">Authentication ready</p>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">
+            {profile?.display_name || profile?.email || "Signed in"}
+          </h1>
+          <dl className="mt-5 space-y-3 text-sm text-slate-600">
+            <div>
+              <dt className="font-medium text-slate-950">Family</dt>
+              <dd>{family?.name ?? "Family setup pending"}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-950">Role</dt>
+              <dd>{role ?? "No active role yet"}</dd>
+            </div>
+          </dl>
+          <button
+            className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            type="button"
+            onClick={logout}
+          >
+            Sign out
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export default function AppRoutes() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<PublicRoute />}>
+          <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+        </Route>
+        <Route element={<ProtectedRoute requireFamily={false} />}>
+          <Route path="/family/setup" element={<FamilySetup />} />
+        </Route>
+        <Route element={<ProtectedRoute requireFamily={true} />}>
+          <Route path="/dashboard" element={<DashboardPlaceholder />} />
+        </Route>
+        <Route path="*" element={<Navigate replace to="/" />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+</file>
+
+<file path="docs/roadmap/roadmap.md">
+# Development Roadmap
+
+## Completed
+
+### Infrastructure
+
+* Supabase Project
+* Environment Variables
+* Database Migration
+* Tables
+* Functions
+* Triggers
+* Seed Data
+* RLS Policies
+
+### Documentation
+
+* PROJECT_CONTEXT.md
+* AI_DEVELOPMENT_RULES.md
+* App Flow Diagram
+* Phase 1A Authentication Architecture
+
+### Source Control
+
+* Git
+* GitHub Repository
+
+### Phase 1B Authentication Foundation
+
+* AuthContext
+* AuthProvider
+* useAuth
+* ProtectedRoute
+* PublicRoute
+* Session Persistence Foundation
+* Auth State Listener
+* Loading State Management
+* Error State Management
+* Profile Loading
+* Family Membership Loading
+* Role Loading
+* Permission Loading through existing has_permission RPC
+
+### Phase 2 Authentication UI Implementation
+
+* AuthLayout
+* AuthCard
+* AuthInput
+* AuthButton
+* Login Page
+* Register Page
+* Forgot Password Page
+* React Hook Form Validation
+* Loading States
+* Error States
+* Forgot Password Success State
+* Mobile-first white authentication UI aligned with approved flow diagram
+
+### Phase 3 Family Creation
+
+* Family feature folder structure
+* FamilySetupForm component
+* FamilySetupCard component
+* FamilySetup page
+* familyService (createFamily function)
+* /family/setup route
+* PublicRoute enhanced with hasFamily check
+* ProtectedRoute requireFamily={false} for family setup
+* ProtectedRoute requireFamily={true} for dashboard
+* First-time user redirect flow
+* Auth state refresh after family creation
+* Mobile-first family creation UI
+* Form validation (2-100 characters)
+* Loading and error states
+* Creator auto-owner functionality
+
+---
+
+## Current Phase
+
+Phase 4
+
+Dashboard
+
+Status:
+Ready For Implementation
+
+---
+
+## Upcoming Phases
+
+### Phase 5
+
+Expense Management
+
+* Expense CRUD
+* Month Selector
+* Expense History
+
+### Phase 6
+
+Want To Buy
+
+* Shared Shopping List
+* Quantity
+* Completion
+
+### Phase 7
+
+Permissions
+
+* Grant Access
+* Permission Toggles
+
+### Phase 8
+
+Notifications
+
+* Notification Center
+
+### Phase 9
+
+Budgets
+
+* Monthly Budget Management
+
+### Phase 10
+
+Money Distribution
+
+* Money Tracking
+* Distribution History
+
+### Phase 11
+
+Theme Customization
+
+* Owner Theme Settings
+
+### Phase 12
+
+Testing & Deployment
+
+* QA
+* Performance
+* Production Deployment
+</file>
+
+<file path="src/pages/auth/Login.jsx">
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { Link } from "react-router-dom";
+
+import {
+  AuthButton,
+  AuthCard,
+  AuthInput,
+  AuthLayout,
+  AuthTextLink,
+  useAuth,
+} from "../../features/auth";
+
+function getErrorMessage(error) {
+  return error?.message ?? "Unable to log in. Please check your details and try again.";
+}
+
+export default function Login() {
+  const { actionLoading, clearError, login } = useAuth();
+  const {
+    formState: { errors, isSubmitting },
+    handleSubmit,
+    register,
+    setError,
+  } = useForm({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  const loading = isSubmitting || actionLoading;
+
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
+
+  async function onSubmit(values) {
+    try {
+      await login({
+        email: values.email.trim(),
+        password: values.password,
+      });
+    } catch (error) {
+      setError("root.server", {
+        message: getErrorMessage(error),
+        type: "server",
+      });
+    }
+  }
+
+  return (
+    <AuthLayout
+      title="Welcome Back"
+      subtitle="Please login to your account"
+      backTo="/login"
+      showBackButton={false}
+    >
+      <AuthCard>
+        <form className="space-y-4" noValidate onSubmit={handleSubmit(onSubmit)}>
+          {errors.root?.server ? (
+            <div
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-left text-sm font-medium text-red-700"
+              role="alert"
+            >
+              {errors.root.server.message}
+            </div>
+          ) : null}
+
+          <AuthInput
+            autoComplete="email"
+            disabled={loading}
+            error={errors.email}
+            id="login-email"
+            label="Email"
+            placeholder="Email"
+            type="email"
+            registration={register("email", {
+              pattern: {
+                message: "Enter a valid email address.",
+                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+              },
+              required: "Email is required.",
+            })}
+          />
+
+          <AuthInput
+            autoComplete="current-password"
+            disabled={loading}
+            error={errors.password}
+            id="login-password"
+            label="Password"
+            placeholder="Password"
+            type="password"
+            registration={register("password", {
+              required: "Password is required.",
+            })}
+          />
+
+          <div className="flex justify-end">
+            <Link
+              className="text-xs font-medium text-neutral-700 transition hover:text-black focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+              to="/forgot-password"
+            >
+              Forgot Password?
+            </Link>
+          </div>
+
+          <AuthButton loading={loading} loadingText="Logging in">
+            Login
+          </AuthButton>
+        </form>
+
+        <p className="mt-7 text-center text-xs text-neutral-600">
+          Do not have an account? <AuthTextLink to="/register">Register</AuthTextLink>
+        </p>
+      </AuthCard>
+    </AuthLayout>
+  );
+}
+</file>
+
+<file path="src/pages/auth/Register.jsx">
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+
+import {
+  AuthButton,
+  AuthCard,
+  AuthInput,
+  AuthLayout,
+  AuthTextLink,
+  useAuth,
+} from "../../features/auth";
+
+function getErrorMessage(error) {
+  return error?.message ?? "Unable to create your account. Please try again.";
+}
+
+export default function Register() {
+  const { actionLoading, clearError, register: registerUser } = useAuth();
+  const [successMessage, setSuccessMessage] = useState("");
+  const {
+    formState: { errors, isSubmitting },
+    getValues,
+    handleSubmit,
+    register,
+    setError,
+  } = useForm({
+    defaultValues: {
+      confirmPassword: "",
+      email: "",
+      fullName: "",
+      password: "",
+    },
+  });
+
+  const loading = isSubmitting || actionLoading;
+
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
+
+  async function onSubmit(values) {
+    setSuccessMessage("");
+
+    try {
+      const data = await registerUser({
+        email: values.email.trim(),
+        metadata: {
+          display_name: values.fullName.trim(),
+          full_name: values.fullName.trim(),
+        },
+        password: values.password,
+      });
+
+      if (data.user && !data.session) {
+        setSuccessMessage("Account created. Please check your email to confirm your account.");
+      }
+    } catch (error) {
+      setError("root.server", {
+        message: getErrorMessage(error),
+        type: "server",
+      });
+    }
+  }
+
+  return (
+    <AuthLayout title="Create Account" subtitle="Fill in the details to register" backTo="/" showBackButton={false}>
+      <AuthCard>
+        <form className="space-y-4" noValidate onSubmit={handleSubmit(onSubmit)}>
+          {errors.root?.server ? (
+            <div
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-left text-sm font-medium text-red-700"
+              role="alert"
+            >
+              {errors.root.server.message}
+            </div>
+          ) : null}
+
+          {successMessage ? (
+            <div
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-800"
+              role="status"
+            >
+              {successMessage}
+            </div>
+          ) : null}
+
+          <AuthInput
+            autoComplete="name"
+            disabled={loading}
+            error={errors.fullName}
+            id="register-full-name"
+            label="Full Name"
+            placeholder="Full Name"
+            registration={register("fullName", {
+              minLength: {
+                message: "Full name must be at least 2 characters.",
+                value: 2,
+              },
+              required: "Full name is required.",
+            })}
+          />
+
+          <AuthInput
+            autoComplete="email"
+            disabled={loading}
+            error={errors.email}
+            id="register-email"
+            label="Email"
+            placeholder="Email"
+            type="email"
+            registration={register("email", {
+              pattern: {
+                message: "Enter a valid email address.",
+                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+              },
+              required: "Email is required.",
+            })}
+          />
+
+          <AuthInput
+            autoComplete="new-password"
+            disabled={loading}
+            error={errors.password}
+            id="register-password"
+            label="Password"
+            placeholder="Password"
+            type="password"
+            registration={register("password", {
+              minLength: {
+                message: "Password must be at least 8 characters.",
+                value: 8,
+              },
+              required: "Password is required.",
+            })}
+          />
+
+          <AuthInput
+            autoComplete="new-password"
+            disabled={loading}
+            error={errors.confirmPassword}
+            id="register-confirm-password"
+            label="Confirm Password"
+            placeholder="Confirm Password"
+            type="password"
+            registration={register("confirmPassword", {
+              required: "Please confirm your password.",
+              validate: (value) =>
+                value === getValues("password") || "Passwords do not match.",
+            })}
+          />
+
+          <AuthButton loading={loading} loadingText="Creating account">
+            Register
+          </AuthButton>
+        </form>
+
+        <p className="mt-7 text-center text-xs text-neutral-600">
+          Already have an account? <AuthTextLink to="/">Login</AuthTextLink>
+        </p>
+      </AuthCard>
+    </AuthLayout>
+  );
+}
+</file>
+
 <file path="PROJECT_CONTEXT.MD">
 # Reference Documents
 
@@ -3207,6 +4213,48 @@ Owner receives all permissions automatically.
 ---
 
 # Application Flow
+
+## First-Time User Experience
+
+New authenticated users must create a family before accessing the application.
+
+Login
+-> No Active Family
+-> /family/setup
+-> Create Family (Auto Owner)
+-> Dashboard
+-> Select Module
+
+---
+
+## Family Creation
+
+When a new user logs in without an active family:
+
+1. User is redirected to /family/setup
+2. User enters family name (2-100 characters)
+3. System creates:
+   - families record (user becomes owner)
+   - family_members record (owner role, active status)
+4. Auth state refreshes (loads family, role, permissions)
+5. User redirected to dashboard
+
+Family Name Rules:
+
+* Required
+* Minimum 2 characters
+* Maximum 100 characters
+* One family per user (Phase 3)
+
+Creator automatically becomes:
+
+* Role: Owner
+* Status: Active member
+* Permissions: All permissions automatically granted
+
+---
+
+## Standard Application Flow (After Family Setup)
 
 Login
 -> Dashboard
@@ -3622,7 +4670,11 @@ Current implemented frontend files:
 * src/lib/supabase.js
 * src/routes/AppRoutes.jsx
 * src/features/auth/index.js
+* src/features/auth/components/AuthButton.jsx
+* src/features/auth/components/AuthCard.jsx
 * src/features/auth/components/AuthErrorState.jsx
+* src/features/auth/components/AuthInput.jsx
+* src/features/auth/components/AuthLayout.jsx
 * src/features/auth/components/AuthLoadingScreen.jsx
 * src/features/auth/context/AuthContext.jsx
 * src/features/auth/hooks/useAuth.js
@@ -3641,7 +4693,7 @@ Current database file:
 Notes:
 
 * Phase 1B authentication foundation is implemented.
-* Auth pages are still placeholder screens and will be implemented in the next phase.
+* Phase 2 authentication UI implementation is complete.
 * Current frontend structure includes the approved auth feature module.
 
 ---
@@ -3741,10 +4793,10 @@ Development rules:
 
 ---
 
-# Development Roadmap
+# # Development Roadmap
 
 Phase 1
-Authentication
+Authentication ✅
 
 * AuthContext
 * Login
@@ -3752,55 +4804,71 @@ Authentication
 * Protected Routes
 
 Phase 2
-Family Creation
+Authentication UI ✅
+
+* Auth Layout
+* Auth Components
+* Login UI
+* Register UI
+* Forgot Password UI
+* React Hook Form Validation
+
+Phase 3
+Family Creation 🚀 CURRENT
 
 * Create Family
 * Become Owner
-
-Phase 3
-Dashboard
-
-* Expense Management
-* Want To Buy
+* Create Owner Membership
+* Family Setup Flow
+* Family Onboarding
 
 Phase 4
+Dashboard
+
+* Module Selection
+* Expense Management Card
+* Want To Buy Card
+* Month Selection
+
+Phase 5
 Expense Management
 
 * Month Selector
 * Expense List
 * Add Expense
 * Edit Expense
+* Expense History
 
-Phase 5
+Phase 6
 Want To Buy
 
 * Item CRUD
 * Quantity
 * Completion Status
 
-Phase 6
+Phase 7
 Permissions
 
 * User List
 * Permission Toggles
 
-Phase 7
+Phase 8
 Budgets
 
 * Monthly Budget Management
 
-Phase 8
+Phase 9
 Money Distribution
 
 * Add Funds
 * Distribution Tracking
 
-Phase 9
+Phase 10
 Notifications
 
 * Notification Center
 
-Phase 10
+Phase 11
 Theme Customization
 
 * Owner Theme Settings
@@ -3811,7 +4879,7 @@ Theme Customization
 
 Project State:
 Database Complete
-Frontend Starting
+Authentication UI Complete
 
 Completed milestones:
 
@@ -3833,6 +4901,10 @@ Completed milestones:
 * ✅ Git initialized
 * ✅ GitHub repository created
 * ✅ Initial code pushed to GitHub
+
+* Phase 1A Authentication Architecture approved
+* Phase 1B Authentication Foundation completed
+* Phase 2 Authentication UI Implementation completed
 
 Current module status:
 
@@ -3858,10 +4930,13 @@ RLS:
 Complete
 
 Authentication:
-Foundation Complete
+UI Complete
 
 Frontend:
-Starting
+Authentication Complete
+
+Family Creation:
+Ready To Start
 
 Dashboard:
 Not Started
@@ -3892,6 +4967,7 @@ Completed:
 * Permissions Architecture
 * Phase 1A Authentication Architecture
 * Phase 1B Authentication Foundation
+* Phase 2 Authentication UI Implementation
 * Supabase Setup
 * Supabase Client Connection
 * Environment Configuration
@@ -3904,13 +4980,10 @@ Completed:
 
 In Progress:
 
-* Phase 2 - Authentication Pages
+* Phase 3 - Family Creation
 
 Not Started:
 
-* Login Form Implementation
-* Register Form Implementation
-* Forgot Password Flow
 * Family Creation Flow
 * Dashboard
 * Expense Management UI
@@ -3949,10 +5022,18 @@ Completed:
 * Permission loading implemented through existing has_permission RPC
 * ProtectedRoute created
 * PublicRoute created
-* Forgot Password route placeholder created
+* AuthLayout shared component created
+* AuthCard shared component created
+* AuthInput shared component created
+* AuthButton shared component created
+* Login page implemented with React Hook Form validation
+* Register page implemented with React Hook Form validation
+* Forgot Password page implemented with React Hook Form validation
+* Authentication loading states implemented
+* Authentication error states implemented
+* Forgot Password success state implemented
+* Auth pages implemented with mobile-first white UI matching approved flow
 * Temporary protected dashboard placeholder created
-* Placeholder Login page created
-* Placeholder Register page created
 * Supabase client file created
 * Tailwind CSS imported
 
@@ -3966,9 +5047,6 @@ Current routes:
 
 Missing:
 
-* Login form implementation
-* Register form implementation
-* Forgot Password form implementation
 * User-facing logout placement outside temporary placeholder
 * Family onboarding
 * Production dashboard
@@ -3987,10 +5065,10 @@ Missing:
 
 Current Phase:
 
-Phase 1B - Authentication Foundation
+Phase 3 - Family Creation
 
 Status:
-COMPLETE
+READY TO START
 
 Completed:
 
@@ -4012,16 +5090,22 @@ Completed:
 * Family Membership Loading
 * Role Loading
 * Permission Loading
-
-Next:
-
-* Phase 2 - Authentication Pages
 * Login Form
 * Register Form
 * Forgot Password Form
+* Auth Shared UI Components
+* React Hook Form Validation
 * Form Loading States
 * Form Error States
-* Post-auth Redirect UX
+
+Next:
+
+* Phase 3 - Family Creation
+* Create Family
+* Become Owner
+* Owner Membership Creation
+* Family Setup Route
+* Redirect authenticated users without active family to family setup
 
 ---
 
@@ -4029,20 +5113,20 @@ Next:
 
 Next implementation target:
 
-Phase 2 - Authentication Pages
+Phase 3 - Family Creation
 
 Implementation order:
 
-1. Implement Login form using useAuth.
-2. Implement Register form using useAuth.
-3. Implement Forgot Password form using useAuth.
-4. Add loading states to all authentication forms.
-5. Add error states to all authentication forms.
-6. Add successful auth redirects.
+1. Create family setup page.
+2. Create family service using existing families and family_members tables.
+3. Allow authenticated users without active family to create a family.
+4. Insert owner family membership using existing database structure.
+5. Refresh auth state after family creation.
+6. Redirect users with active family to dashboard.
 7. Preserve mobile-first layout.
 8. Keep database architecture unchanged.
 
-Authentication pages must be completed before family creation, dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
+Family creation must be completed before production dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
 
 ---
 
@@ -4122,10 +5206,10 @@ Authentication pages must be completed before family creation, dashboard, expens
 
 Project State:
 Database Complete
-Frontend Starting
+Authentication UI Complete
 
 Ready For:
-Authentication Pages Implementation
+Family Creation Implementation
 </file>
 
 </files>

@@ -145,6 +145,48 @@ Owner receives all permissions automatically.
 
 # Application Flow
 
+## First-Time User Experience
+
+New authenticated users must create a family before accessing the application.
+
+Login
+-> No Active Family
+-> /family/setup
+-> Create Family (Auto Owner)
+-> Dashboard
+-> Select Module
+
+---
+
+## Family Creation
+
+When a new user logs in without an active family:
+
+1. User is redirected to /family/setup
+2. User enters family name (2-100 characters)
+3. System creates:
+   - families record (user becomes owner)
+   - family_members record (owner role, active status)
+4. Auth state refreshes (loads family, role, permissions)
+5. User redirected to dashboard
+
+Family Name Rules:
+
+* Required
+* Minimum 2 characters
+* Maximum 100 characters
+* One family per user (Phase 3)
+
+Creator automatically becomes:
+
+* Role: Owner
+* Status: Active member
+* Permissions: All permissions automatically granted
+
+---
+
+## Standard Application Flow (After Family Setup)
+
 Login
 -> Dashboard
 -> Select Module
