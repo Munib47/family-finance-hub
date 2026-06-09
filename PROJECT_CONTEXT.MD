@@ -701,445 +701,10 @@ Runtime and tooling:
 
 ---
 
-# Debugging Session Notes
-
-- Debugging session date: 2026-06-09
-- RLS investigation summary:
-  - Confirmed the `families` table uses a Supabase RLS INSERT policy requiring `owner_user_id = auth.uid()`.
-  - Confirmed the authenticated role has `INSERT` privilege on `families`; policy is enforcing row ownership.
-  - Identified the likely payload mismatch source between the frontend `owner_user_id` and the current session auth UID.
-- Root cause findings:
-  - `FamilySetup.jsx` passes `user.id` into `createFamily()`.
-  - `familyService.createFamily()` inserts `owner_user_id` using that `user.id`.
-  - When `owner_user_id !== auth.uid()` on the Supabase request, the insert is blocked by RLS and returns a 403.
-- Next approved action:
-  - Use the temporary debug logs in `AuthProvider`, `authBootstrapService`, `FamilySetup`, and `familyService` to capture exact runtime values.
-  - Confirm if `session.user.id`, `user.id`, `profile.id`, and `owner_user_id` are identical at runtime.
-  - After identifying the actual mismatch, adjust the flow or value source without changing RLS or schema.
-
-* ESLint
-* JavaScript / JSX
-
-Available npm scripts:
-
-* npm run dev
-* npm run build
-* npm run lint
-* npm run preview
-
-Environment variables:
-
-* VITE_SUPABASE_URL
-* VITE_SUPABASE_ANON_KEY
-
-Development rules:
-
-* Use JavaScript / JSX because TypeScript is not installed.
-* Use mobile-first Tailwind CSS.
-* Use Context API for app state.
-* Use Supabase Auth for authentication.
-* Use existing Supabase tables, functions, triggers, and RLS policies.
-* Do not create or modify database schema unless explicitly approved.
-
----
-
-# Current Blocker
-
-- `families` INSERT is being rejected by RLS with `42501` despite the frontend payload and session values matching.
-
-# Evidence Collected
-
-- `session.user.id` matches `profile.id`.
-- `session.user.id` matches the inserted `owner_user_id` payload.
-- `families` table is empty and policy is `WITH CHECK (owner_user_id = auth.uid())`.
-- The frontend performs the insert through `supabase.from("families").insert(...)`.
-- Debug logs confirm the client has a session, but not whether the outgoing request includes `Authorization: Bearer <token>`.
-
-# Investigation Performed
-
-- Reviewed `src/lib/supabase.js` for Supabase client initialization.
-- Reviewed `src/features/auth/context/AuthContext.jsx` for session restore and auth state bootstrapping.
-- Reviewed `src/features/auth/services/authBootstrapService.js` for session-driven profile/membership load.
-- Reviewed `src/features/auth/services/authService.js` for sign-in, sign-up, and current session retrieval.
-- Reviewed `src/features/family/services/familyService.js` for the actual `families` insert and session verification before the request.
-
-# Recommended Next Action
-
-- Inspect the outgoing browser request in DevTools Network for `POST /rest/v1/families`.
-- Confirm `Authorization: Bearer <jwt>` is present in the request headers.
-- Verify the stored local session under `family-expense-auth` contains a valid `access_token` and `expires_at`.
-- If the header is missing, the issue is JWT propagation / Supabase auth header attachment, not payload logic.
-- If the header is present, capture the exact token and compare it to the current `session.access_token` and current authenticated user.
-
----
-
 # # Development Roadmap
 
 Phase 1
 Authentication ✅
-
----
-
-# Database Investigation Phase Round 2
-
-- Confirmed findings from Round 1:
-  - JWT Authorization header exists on `POST /rest/v1/families`.
-  - JWT role is `authenticated` and sub matches `session.user.id`.
-  - `owner_user_id` payload matches the authenticated user.
-  - `families` INSERT policy is `WITH CHECK (owner_user_id = auth.uid())`.
-  - `authenticated` has INSERT privilege and RLS is enabled.
-- New hypothesis:
-  - `auth.uid()` or related auth helper resolution may not be binding correctly in the database policy context.
-  - Another policy or auth schema function may be interfering with the effective evaluation of `auth.uid()`.
-  - The authenticated role mapping inside Postgres may differ from the JWT auth role.
-- Investigation queries generated: see the SQL queries below.
-- Next approved action:
-  - Execute these SQL queries in Supabase SQL Editor to validate `auth.uid()`, `auth.role()`, `auth.jwt()`, and related auth helper functions.
-  - Identify any auth schema objects or policy bindings that could cause the row-level security rejection.
-
-## SQL Queries for Round 2 Investigation
-
-1. Query Number: 1
-   SQL Query:
-   ```sql
-   select n.nspname as schema_name, p.proname as function_name, p.prosrc as source, p.prosecdef as security_definer
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where n.nspname = 'auth'
-   order by p.proname;
-   ```
-   What Success Looks Like: the `auth` schema exists and exposes auth helper functions such as `uid`, `role`, and `jwt`.
-   What Failure Looks Like: the `auth` schema is missing, or expected auth helper functions are absent.
-   Why It Matters: if the auth schema or its functions are missing, `auth.uid()` cannot resolve correctly.
-
-2. Query Number: 2
-   SQL Query:
-   ```sql
-   select n.nspname as schema_name, p.proname as function_name, p.prosrc as source, p.prosecdef as security_definer
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where p.proname in ('uid', 'role', 'jwt')
-     and n.nspname = 'auth'
-   order by p.proname;
-   ```
-   What Success Looks Like: functions `uid`, `role`, and `jwt` exist in schema `auth`.
-   What Failure Looks Like: one or more of these functions is missing.
-   Why It Matters: the policy depends on `auth.uid()` being a valid callable function.
-
-3. Query Number: 3
-   SQL Query:
-   ```sql
-   select p.oid, n.nspname as schema_name, p.proname as function_name, pg_get_functiondef(p.oid) as definition
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where p.proname in ('uid', 'role', 'jwt')
-     and n.nspname = 'auth';
-   ```
-   What Success Looks Like: full definitions of auth helper functions are visible.
-   What Failure Looks Like: function definitions are missing or unexpected.
-   Why It Matters: verifies the exact implementation of auth helper functions.
-
-4. Query Number: 4
-   SQL Query:
-   ```sql
-   select polname,
-          polcmd,
-          polroles,
-          pg_get_expr(polqual, polrelid) as using_expr,
-          pg_get_expr(polwithcheck, polrelid) as with_check_expr
-   from pg_policy
-   where polrelid = 'public.families'::regclass
-   order by polname;
-   ```
-   What Success Looks Like: expected `families_insert_as_owner` policy is present with `auth.uid()` in `with_check_expr`.
-   What Failure Looks Like: missing or altered policy definitions, or additional policies affecting INSERT.
-   Why It Matters: confirms the exact policy bound to `families` insert operations.
-
-5. Query Number: 5
-   SQL Query:
-   ```sql
-   select n.nspname as schema_name, p.proname as function_name, p.prosrc as source
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where p.prosrc ilike '%auth.uid()%' or p.prosrc ilike '%auth.jwt()%' or p.prosrc ilike '%auth.role()%'
-   order by n.nspname, p.proname;
-   ```
-   What Success Looks Like: no unexpected custom functions reference `auth.uid()` or related auth helpers.
-   What Failure Looks Like: custom functions or policies explicitly embedding `auth.uid()` in strange ways.
-   Why It Matters: identifies hidden DB code that might override or intercept auth helper behavior.
-
-6. Query Number: 6
-   SQL Query:
-   ```sql
-   select rolname, rolinherit, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication, rolbypassrls
-   from pg_roles
-   where rolname = 'authenticated';
-   ```
-   What Success Looks Like: `authenticated` role exists and has expected role attributes.
-   What Failure Looks Like: role missing or has unusual attributes like `rolbypassrls=true` or missing login.
-   Why It Matters: verifies the database role mapping for JWT-authenticated users.
-
-7. Query Number: 7
-   SQL Query:
-   ```sql
-   select objid::regclass as object_name, deptype, refobjid::regclass as referenced_object, classid::regclass as dependent_class
-   from pg_depend
-   where refobjid = 'public.families'::regclass
-   order by deptype, dependent_class::text;
-   ```
-   What Success Looks Like: dependencies are only on expected constraints, policies, and indexes.
-   What Failure Looks Like: unexpected dependencies suggest hidden objects affecting insert behavior.
-   Why It Matters: reveals indirect objects tied to `families` that can influence RLS or insert execution.
-
-8. Query Number: 8
-   SQL Query:
-   ```sql
-   select n.nspname as schema_name, p.proname as function_name, p.prosrc as source, p.prosecdef as security_definer
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where p.prosecdef = true
-   order by n.nspname, p.proname;
-   ```
-   What Success Looks Like: list of security definer functions is limited and not directly tied to auth helpers.
-   What Failure Looks Like: presence of security definer functions in public or auth namespaces that might affect auth context.
-   Why It Matters: security definer functions can alter the privilege and auth context used during inserts.
-
-9. Query Number: 9
-   SQL Query:
-   ```sql
-   select n.nspname as schema_name, p.proname as function_name, p.prosrc as source
-   from pg_proc p
-   join pg_namespace n on p.pronamespace = n.oid
-   where p.prosrc ilike '%auth.uid%' or p.prosrc ilike '%auth.jwt%' or p.prosrc ilike '%auth.role%'
-   order by n.nspname, p.proname;
-   ```
-   What Success Looks Like: only standard auth-related functions or policies reference auth helpers.
-   What Failure Looks Like: unusual custom code references auth helpers in conflicting ways.
-   Why It Matters: confirms whether any non-standard DB logic is impacting auth helper resolution.
-
-10. Query Number: 10
-    SQL Query:
-    ```sql
-    select n.nspname as schema_name, cls.relname as relation_name, acl
-    from pg_class cls
-    join pg_namespace n on cls.relnamespace = n.oid
-    where cls.relname = 'families'
-      and n.nspname = 'public';
-    ```
-    What Success Looks Like: ACL for `families` shows expected privileges and no odd role mappings.
-    What Failure Looks Like: unexpected ACL entries or missing privileges for `authenticated`.
-    Why It Matters: verifies whether explicit table ACLs differ from policy expectations.
-
----
-
-# Database Investigation Phase Round 3
-
-- Confirmed evidence:
-  - JWT, session, and payload all contain UUID: ab91696f-bfea-46d4-ac17-dab2d0fbee7a.
-  - `families_insert_as_owner` policy exists with `WITH CHECK (owner_user_id = auth.uid())`.
-  - No INSERT triggers, unexpected constraints, or ACL issues detected.
-  - Error remains: `42501 new row violates row-level security policy`.
-- Root cause hypothesis:
-  - The PostgreSQL session executing the `families` INSERT is NOT running as the `authenticated` role.
-  - OR the JWT claims are not properly propagated to the PostgreSQL context during RLS policy evaluation.
-  - OR `auth.uid()` cannot access or resolve the JWT sub claim during policy evaluation.
-  - OR Supabase/PostgREST request handling is not setting session variables correctly before INSERT.
-- Investigation direction:
-  - Determine the exact PostgreSQL role executing the families INSERT request.
-  - Verify JWT claim propagation to session variables.
-  - Test `auth.uid()` resolution in policy context.
-  - Confirm whether PostgREST is setting `request.jwt.claims` correctly.
-- Next approved action:
-  - PIVOT: Auth context queries are now considered low-value. JWT, payload, and session values already confirmed matching. Instead, focus on database schema objects that could interfere with RLS policy evaluation at the REST layer.
-  - Execute targeted SQL queries to inspect policy dependencies, table rules, generated columns, triggers, grants, and PostgREST-facing database objects.
-
-## Why Auth Context Queries Are Low-Value
-
-- JWT sub matches owner_user_id: verified
-- Session user.id matches owner_user_id: verified
-- Authorization header is present: verified
-- The policy syntax is correct: verified
-- The error is RLS rejection, not auth failure: confirmed by error code 42501
-
-**Conclusion**: The problem is not JWT propagation or auth context. The problem is a database schema object that is:
-1. Preventing the RLS policy from evaluating correctly at the REST layer, or
-2. Failing some validation before RLS evaluation can complete, or
-3. Interfering with PostgREST's request translation
-
-## Investigation Pivot: Schema Objects & Policy Dependencies
-
-The families INSERT fails at the RLS layer specifically when invoked via PostgREST, despite correct JWT/payload. This suggests:
-- A trigger or constraint evaluated before RLS
-- Generated columns with function defaults
-- Table rules or rewrite behavior
-- Schema grants preventing policy enforcement
-- PostgREST-specific configuration issues
-- Dependency on database objects not available in the request context
-
-## SQL Queries for Round 3 Investigation (Revised: Schema Objects & Dependencies)
-
-1. Query Number: R3-1 | Triggers on families Table
-   SQL Query:
-   ```sql
-   select trigger_name, action_timing, event_manipulation, action_statement
-   from information_schema.triggers
-   where event_object_table = 'families'
-     and event_object_schema = 'public'
-   order by event_manipulation, action_timing;
-   ```
-   What Success Looks Like: no triggers, or only triggers that don't interfere with INSERT validation
-   What Failure Looks Like: BEFORE INSERT triggers or triggers that reference auth functions
-   Why It Matters: BEFORE INSERT triggers execute before RLS checks; if a trigger references auth.uid() without proper context, it could fail before RLS evaluation
-
-2. Query Number: R3-2 | Generated Columns & Defaults on families
-   SQL Query:
-   ```sql
-   select column_name, column_default, is_generated, generation_expression, data_type
-   from information_schema.columns
-   where table_name = 'families'
-     and table_schema = 'public'
-   order by ordinal_position;
-   ```
-   What Success Looks Like: defaults are simple values or timestamps, no function calls; generated columns do not reference auth functions
-   What Failure Looks Like: column defaults call auth.uid() or other context-dependent functions
-   Why It Matters: column defaults are evaluated before INSERT policy checks; if default calls auth.uid() before the auth context is set, it fails
-
-3. Query Number: R3-3 | Table Rules on families
-   SQL Query:
-   ```sql
-   select schemaname, tablename, rulename, definition
-   from pg_rules
-   where tablename = 'families'
-     and schemaname = 'public';
-   ```
-   What Success Looks Like: no rules exist, or rules are standard PostgreSQL INSTEAD OF rules
-   What Failure Looks Like: custom rewrite rules that intercept the INSERT
-   Why It Matters: rules intercept and rewrite INSERT statements before RLS evaluation; unexpected rules could bypass or interfere with policy checks
-
-4. Query Number: R3-4 | Policy OID & Dependencies
-   SQL Query:
-   ```sql
-   select 
-     p.oid as policy_oid,
-     p.polname,
-     t.oid as table_oid,
-     pg_get_expr(p.polwithcheck, p.polrelid) as with_check_expr
-   from pg_policy p
-   join pg_class t on p.polrelid = t.oid
-   where t.relname = 'families'
-     and t.relnamespace = 'public'::regnamespace;
-   ```
-   What Success Looks Like: one row for `families_insert_as_owner` with policy_oid and valid expression
-   What Failure Looks Like: multiple policies, conflicting policies, or malformed expression
-   Why It Matters: confirms exact policy OID used for this INSERT and shows dependencies
-
-5. Query Number: R3-5 | Function Dependencies via pg_depend
-   SQL Query:
-   ```sql
-   select 
-     d.deptype,
-     o.relname as object_name,
-     c.relkind,
-     p.proname as function_name,
-     p.oid as function_oid
-   from pg_depend d
-   join pg_class c on d.objid = c.oid
-   left join pg_class o on d.refobjid = o.oid
-   left join pg_proc p on d.refobjid = p.oid
-   where c.relname = 'families'
-     and c.relnamespace = 'public'::regnamespace
-   order by d.deptype;
-   ```
-   What Success Looks Like: dependencies on auth functions (auth.uid) are optional; no critical missing dependencies
-   What Failure Looks Like: required dependencies on functions that don't exist or cannot be resolved
-   Why It Matters: missing function dependencies could cause policy evaluation to fail
-
-6. Query Number: R3-6 | Schema Grants on families Table
-   SQL Query:
-   ```sql
-   select grantee, privilege_type
-   from information_schema.role_table_grants
-   where table_name = 'families'
-     and table_schema = 'public'
-   order by grantee, privilege_type;
-   ```
-   What Success Looks Like: `authenticated` role has INSERT, SELECT grants; `anon` has no INSERT
-   What Failure Looks Like: `authenticated` is missing INSERT grant, or grants are restricted
-   Why It Matters: RLS policies don't override table-level grants; if `authenticated` lacks INSERT permission, RLS is never reached
-
-7. Query Number: R3-7 | Table Ownership & Namespace
-   SQL Query:
-   ```sql
-   select 
-     t.relname as table_name,
-     u.usename as owner,
-     n.nspname as schema_name,
-     t.relkind,
-     t.relrowsecurity,
-     t.relpolicy
-   from pg_class t
-   join pg_user u on t.relowner = u.usesysid
-   join pg_namespace n on t.relnamespace = n.oid
-   where t.relname = 'families'
-     and n.nspname = 'public';
-   ```
-   What Success Looks Like: owner is postgres or service role; relrowsecurity=true; relpolicy>0
-   What Failure Looks Like: owner is an unexpected role; relrowsecurity=false
-   Why It Matters: table ownership affects how policies are enforced; if RLS is disabled, policy is ignored
-
-8. Query Number: R3-8 | Constraints on families Table
-   SQL Query:
-   ```sql
-   select constraint_name, constraint_type, column_name
-   from information_schema.table_constraints tc
-   left join information_schema.key_column_usage kcu on tc.constraint_name = kcu.constraint_name
-   where tc.table_name = 'families'
-     and tc.table_schema = 'public'
-   order by constraint_type, constraint_name;
-   ```
-   What Success Looks Like: PK on id; FK to auth.users if present; all constraints are straightforward
-   What Failure Looks Like: CHECK constraints that reference auth.uid() or other context functions
-   Why It Matters: CHECK constraints are evaluated before RLS; if they fail, RLS never runs
-
-9. Query Number: R3-9 | PostgREST-Specific Table Configuration
-   SQL Query:
-   ```sql
-   select 
-     t.relname,
-     t.relkind,
-     a.attname as column_name,
-     t.oid,
-     obj_description(t.oid, 'pg_class') as table_comment
-   from pg_class t
-   left join pg_attribute a on t.oid = a.attrelid and a.attnum > 0
-   join pg_namespace n on t.relnamespace = n.oid
-   where t.relname = 'families'
-     and n.nspname = 'public'
-   order by a.attnum;
-   ```
-   What Success Looks Like: relkind='r' (regular table); no special comments; all columns accessible
-   What Failure Looks Like: relkind='v' (view); hidden columns; comments indicating restricted access
-   Why It Matters: PostgREST behavior differs for views vs tables; if families is a view, different policies apply
-
-10. Query Number: R3-10 | RLS Policy Expression Details
-    SQL Query:
-    ```sql
-    select 
-      p.polname,
-      p.polcmd,
-      p.polpermissive,
-      array_agg(r.rolname) as roles,
-      pg_get_expr(p.polqual, p.polrelid) as using_clause,
-      pg_get_expr(p.polwithcheck, p.polrelid) as with_check_clause
-    from pg_policy p
-    left join pg_roles r on p.polroles::text::bigint[] @> array[r.oid]
-    where p.polrelid = 'public.families'::regclass
-    group by p.polname, p.polcmd, p.polpermissive, p.polrelid, p.polqual, p.polwithcheck
-    order by p.polcmd;
-    ```
-    What Success Looks Like: exactly one INSERT policy with `polpermissive=true` and `with_check_clause` containing `auth.uid()`
-    What Failure Looks Like: multiple conflicting policies, permissive=false on INSERT, or malformed expression
-    Why It Matters: confirms the exact RLS policy bound to families INSERT and whether it should block or allow
 
 ---
 
@@ -1153,97 +718,6 @@ Authentication UI ✅
 
 * Auth Layout
 * Auth Components
-
----
-
-# Database Investigation Phase
-
-- Date/Time: 2026-06-09
-- Current blocker: `families` INSERT is rejected by RLS with error `42501` despite valid JWT and correct payload.
-- Evidence collected so far:
-  - Authorization Bearer token is present on the request.
-  - JWT role is `authenticated` and JWT sub matches `session.user.id`.
-  - `owner_user_id` payload matches the authenticated user.
-  - The `families` INSERT policy is `WITH CHECK (owner_user_id = auth.uid())`.
-  - Authenticated role has INSERT privilege.
-  - RLS is enabled on `families` and FORCE RLS is disabled.
-- Confirmed facts:
-  - Frontend payload is valid.
-  - Session and JWT are aligned.
-  - The rejection is coming from database row-level security or a related database object.
-- Eliminated root causes:
-  - Missing Authorization header.
-  - Incorrect `owner_user_id` payload.
-  - Bad frontend session/user mapping.
-- Pending investigation queries: see the SQL queries listed in the active issue investigation.
-- Next approved action:
-  - Execute the exact SQL queries in the Supabase SQL Editor to inspect `families` constraints, foreign keys, triggers, policies, grants, and hidden dependencies.
-  - Identify the specific database object or policy causing the rejection.
-
-* Login UI
-* Register UI
-* Forgot Password UI
-* React Hook Form Validation
-
-Phase 3
-Family Creation 🚀 CURRENT
-
-* Create Family
-* Become Owner
-* Create Owner Membership
-* Family Setup Flow
-* Family Onboarding
-
-Phase 4
-Dashboard
-
-* Module Selection
-* Expense Management Card
-* Want To Buy Card
-* Month Selection
-
-Phase 5
-Expense Management
-
-* Month Selector
-* Expense List
-* Add Expense
-* Edit Expense
-* Expense History
-
-Phase 6
-Want To Buy
-
-* Item CRUD
-* Quantity
-* Completion Status
-
-Phase 7
-Permissions
-
-* User List
-* Permission Toggles
-
-Phase 8
-Budgets
-
-* Monthly Budget Management
-
-Phase 9
-Money Distribution
-
-* Add Funds
-* Distribution Tracking
-
-Phase 10
-Notifications
-
-* Notification Center
-
-Phase 11
-Theme Customization
-
-* Owner Theme Settings
 
 ---
 
@@ -1308,7 +782,7 @@ Frontend:
 Authentication Complete
 
 Family Creation:
-Ready To Start
+Complete
 
 Dashboard:
 Not Started
@@ -1352,11 +826,10 @@ Completed:
 
 In Progress:
 
-* Phase 3 - Family Creation
+* Phase 4 - Dashboard
 
 Not Started:
 
-* Family Creation Flow
 * Dashboard
 * Expense Management UI
 * Want To Buy UI
@@ -1437,10 +910,10 @@ Missing:
 
 Current Phase:
 
-Phase 3 - Family Creation
+Phase 4 - Dashboard
 
 Status:
-READY TO START
+IN PROGRESS
 
 Completed:
 
@@ -1481,24 +954,73 @@ Next:
 
 ---
 
-# Next Development Phase
+# # Next Development Phase
 
 Next implementation target:
 
-Phase 3 - Family Creation
+Phase 4 - Dashboard
 
-Implementation order:
+Implementation Order:
 
-1. Create family setup page.
-2. Create family service using existing families and family_members tables.
-3. Allow authenticated users without active family to create a family.
-4. Insert owner family membership using existing database structure.
-5. Refresh auth state after family creation.
-6. Redirect users with active family to dashboard.
-7. Preserve mobile-first layout.
-8. Keep database architecture unchanged.
+1. Create production Dashboard page.
+2. Replace the temporary authentication-ready placeholder screen.
+3. Create Dashboard layout (mobile-first).
+4. Display current family information.
+5. Display current user role.
+6. Add Month Selector component.
+7. Add Module Selection cards:
 
-Family creation must be completed before production dashboard, expenses, want-to-buy, budgets, permissions, notifications, or theme customization.
+   * Expense Management
+   * Want To Buy
+8. Create dashboard navigation structure.
+9. Connect dashboard to existing AuthContext data.
+10. Preserve existing database architecture and RLS policies.
+11. Ensure owner, authorized user, and regular user visibility rules are respected.
+12. Add loading and error states.
+13. Maintain responsive mobile-first design.
+
+Dashboard Requirements:
+
+* Show active family name.
+* Show current user role.
+* Show month selector.
+* Show Expense Management module card.
+* Show Want To Buy module card.
+* Support future expansion for:
+
+  * Budgets
+  * Money Distribution
+  * Notifications
+  * Permissions
+  * Theme Settings
+
+Database Changes:
+
+* No database schema changes allowed.
+* No RLS policy changes allowed.
+* Use existing AuthContext and loaded membership data.
+
+Completion Criteria:
+
+* User logs in successfully.
+* User is redirected to dashboard.
+* Dashboard displays family information.
+* Dashboard displays module selection.
+* Dashboard supports month-based navigation.
+* Temporary authentication-ready placeholder is removed.
+
+Phase 3 - Family Creation Status:
+
+✅ Complete
+
+Verified:
+
+* Family creation works.
+* Owner membership creation works.
+* Auth refresh works.
+* Dashboard access works.
+* RLS policies work correctly.
+* User onboarding flow is complete.
 
 ---
 
@@ -1579,304 +1101,215 @@ Family creation must be completed before production dashboard, expenses, want-to
 Project State:
 Database Complete
 Authentication UI Complete
+Family Creation Complete
 
 Ready For:
-Family Creation Implementation
+Dashboard Implementation
 
 ---
 
-# Diagnostic Test: Families INSERT RLS Policy Isolation
+# Phase 3 Family Creation Completion Report
 
-## Test Date
+## Completion Date
+
 2026-06-09
 
-## Reason For Test
-Families INSERT operations fail with error code `42501` (row-level security policy violation) despite:
-- User authentication confirmed
-- JWT sub matches owner_user_id
-- Profile record exists
-- All payload values match session values
-- Foreign key constraints valid
-- Database grants correct
+## Status
 
-## Hypothesis
-The failure is specifically caused by the condition `owner_user_id = auth.uid()` in the INSERT policy, OR there is another obstruction in the INSERT path unrelated to authentication.
-
-## Test Objective
-Isolate the root cause by temporarily replacing the INSERT policy with a permissive policy `WITH CHECK (true)`.
-
-## Policy Under Test
-**Current Policy Name:** `families_insert_as_owner`
-
-**Current Policy Definition:**
-```sql
-CREATE POLICY families_insert_as_owner ON public.families 
-  FOR INSERT 
-  TO authenticated 
-  WITH CHECK (owner_user_id = auth.uid());
-```
-
-**Temporary Diagnostic Policy Definition:**
-```sql
-CREATE POLICY families_insert_as_owner_diagnostic ON public.families 
-  FOR INSERT 
-  TO authenticated 
-  WITH CHECK (true);
-```
-
-## Expected Outcomes
-
-### Success Scenario
-- INSERT on families table succeeds
-- No 42501 error returned
-- Family record is created with the provided owner_user_id
-
-**Diagnosis if Success:**
-The root cause IS the condition `owner_user_id = auth.uid()`. One of:
-1. `auth.uid()` returns NULL during INSERT evaluation
-2. `auth.uid()` returns a different UUID than owner_user_id
-3. A timing or sequencing issue prevents auth context propagation
-4. JWT claims are not accessible during RLS policy evaluation at the REST layer
-
-**Next Step if Success:**
-- Investigate JWT propagation to Supabase RLS context
-- Verify auth.uid() resolution during REST requests
-- Examine PostgREST configuration for JWT claim mapping
-- Check for database role/grant misconfigurations
-
-### Failure Scenario
-- INSERT on families table still fails with 42501
-- No change in error behavior from before the test
-
-**Diagnosis if Failure:**
-The root cause is NOT the condition `owner_user_id = auth.uid()`. Root cause exists elsewhere:
-1. Another RLS policy is blocking INSERT (unlikely, given this is the only INSERT policy)
-2. An undiscovered trigger, constraint, or validation is failing before RLS evaluation
-3. Missing or incorrect database grants at table/schema level
-4. PostgREST layer configuration preventing request execution
-5. A dependent object or generated column is raising an error
-
-**Next Step if Failure:**
-- Investigate INSERT triggers on families table
-- Audit foreign key constraints and DEFAULT values
-- Inspect generated columns or computed fields
-- Verify table and schema ACLs
-- Check PostgREST authentication and authorization configuration
-
-## Rollback Procedure
-After test completion, the diagnostic policy must be dropped and the original policy restored:
-
-**Step 1: Drop Diagnostic Policy**
-```sql
-DROP POLICY families_insert_as_owner_diagnostic ON public.families;
-```
-
-**Step 2: Restore Original Policy**
-```sql
-CREATE POLICY families_insert_as_owner ON public.families 
-  FOR INSERT 
-  TO authenticated 
-  WITH CHECK (owner_user_id = auth.uid());
-```
-
-**Step 3: Verify Restoration**
-```sql
-SELECT 
-  schemaname,
-  tablename,
-  policyname,
-  permissive,
-  roles,
-  qual,
-  with_check
-FROM pg_policies 
-WHERE tablename = 'families' AND policyname LIKE '%insert%'
-ORDER BY policyname;
-```
-
-## All Other Policies (Unchanged)
-- `families_select_active_members` (SELECT)
-- `families_update_owner` (UPDATE)
-- `families_delete_owner` (DELETE)
-
-These policies MUST remain untouched during the diagnostic test.
-
-## Test Execution Authority
-Only execute this test SQL in Supabase SQL Editor with explicit approval.
-Do not combine with other schema changes.
-Do not execute in production without backup.
-
-## Success Criteria Checklist
-- [ ] Diagnostic policy deployed
-- [ ] INSERT attempt made on families table
-- [ ] Result recorded (success/failure)
-- [ ] Original policy restored
-- [ ] Verification query confirms restoration
-- [ ] No other policies modified
-- [ ] No other tables affected
+✅ COMPLETE
 
 ---
 
-# Complete Diagnostic SQL Package
+## Problem Encountered
 
-## Test Execution Log Template
+Family creation initially failed with:
 
-**Test Timestamp**: [TO BE FILLED: ISO 8601 timestamp when SQL is executed]
+```text
+42501
+new row violates row-level security policy for table "families"
+```
 
-**Original Policy Captured**: [TO BE FILLED: pg_policies output before test]
+and later:
 
-**Diagnostic Policy Status**: [TO BE FILLED: DEPLOYED / ROLLED BACK]
-
-**INSERT Test Result**: [TO BE FILLED: SUCCESS / FAILED 42501 / FAILED OTHER]
-
-**Error Message (if failed)**: [TO BE FILLED: Exact error from Supabase]
-
-**Rollback Status**: [TO BE FILLED: COMPLETED / PENDING]
+```text
+PGRST116
+Cannot coerce the result to a single JSON object
+```
 
 ---
 
-## Step 0: Pre-Test Verification (CAPTURE CURRENT STATE)
+## Root Cause Analysis
 
-### Query: Capture Current families INSERT Policy Definition
+The issue was caused by a family bootstrap dependency:
 
-**Purpose**: Document the exact current policy before any modifications
-
-**Execute in Supabase SQL Editor**:
-
-```sql
--- ============================================================================
--- STEP 0: CAPTURE CURRENT INSERT POLICY
--- ============================================================================
--- Query: Capture families INSERT Policy Before Test
-
-SELECT 
-  schemaname,
-  tablename,
-  policyname,
-  permissive,
-  roles::text[] as policy_roles,
-  qual as using_condition,
-  with_check as check_condition
-FROM pg_policies 
-WHERE tablename = 'families' 
-  AND event_type = 'INSERT'
-ORDER BY policyname;
-
--- Expected Output:
--- | schemaname | tablename | policyname                 | permissive | policy_roles | using_condition | check_condition                      |
--- | public     | families  | families_insert_as_owner   | true       | authenticated | (null)          | owner_user_id = auth.uid()          |
+```text
+User creates family
+↓
+Application attempts to SELECT newly created family
+↓
+families SELECT policy requires active family membership
+↓
+family_members record does not exist yet
+↓
+SELECT returns 0 rows
+↓
+Owner membership creation never executes
 ```
 
-**Record Output**: Document the exact policy definition (capture screenshot or text)
+This created a circular dependency between:
+
+* families RLS policies
+* family_members RLS policies
+* Auth bootstrap flow
 
 ---
 
-### Query: Verify All families Policies (SELECT/UPDATE/DELETE Unchanged)
+## Solution Implemented
 
-**Purpose**: Confirm that other policies are not modified during test
-
-**Execute in Supabase SQL Editor**:
+A database RPC function was created:
 
 ```sql
--- ============================================================================
--- VERIFY: All families Policies (Pre-Test Baseline)
--- ============================================================================
-
-SELECT 
-  policyname,
-  event_type,
-  permissive,
-  roles::text[] as policy_roles,
-  CASE 
-    WHEN qual IS NOT NULL THEN 'HAS USING'
-    ELSE 'NO USING'
-  END as has_using,
-  CASE 
-    WHEN with_check IS NOT NULL THEN 'HAS WITH_CHECK'
-    ELSE 'NO WITH_CHECK'
-  END as has_with_check
-FROM pg_policies 
-WHERE tablename = 'families' 
-ORDER BY event_type, policyname;
-
--- Expected Output (PRE-TEST):
--- | policyname                     | event_type | permissive | policy_roles      | has_using    | has_with_check  |
--- | families_insert_as_owner       | INSERT     | true       | {authenticated}   | NO USING     | HAS WITH_CHECK  |
--- | families_select_active_members | SELECT     | true       | {authenticated}   | HAS USING    | NO WITH_CHECK   |
--- | families_update_owner          | UPDATE     | true       | {authenticated}   | HAS USING    | HAS WITH_CHECK  |
--- | families_delete_owner          | DELETE     | true       | {authenticated}   | HAS USING    | NO WITH_CHECK   |
+public.create_family_with_owner_member(
+  p_name text,
+  p_owner_user_id uuid
+)
 ```
 
-**Record Output**: Screenshot or save output for comparison post-test
+Implementation:
+
+```sql
+SECURITY DEFINER
+SET search_path = public
+SET row_security = off
+```
+
+The RPC performs:
+
+1. Create family
+2. Create owner membership
+3. Set base_role = owner
+4. Set membership_status = active
+5. Set joined_at = now()
+6. Return family_id
 
 ---
 
-## Step 1: Deploy Diagnostic Policy
+## Frontend Changes
 
-### SQL: Drop Current INSERT Policy & Deploy Diagnostic Policy
+familyService.js was updated to:
 
-**Purpose**: Replace the restrictive policy with a permissive one to isolate the failure cause
+* Call create_family_with_owner_member RPC
+* Stop querying families immediately after insert
+* Refresh AuthContext after success
 
-**Execute in Supabase SQL Editor**:
+FamilySetup.jsx remains responsible for:
 
-```sql
--- ============================================================================
--- STEP 1: DEPLOY DIAGNOSTIC POLICY
--- Timestamp: [INSERT CURRENT TIMESTAMP]
--- ============================================================================
-
--- Step 1A: Drop the existing restrictive INSERT policy
-DROP POLICY IF EXISTS families_insert_as_owner ON public.families;
-
--- Step 1B: Create temporary permissive diagnostic policy
-CREATE POLICY families_insert_as_owner_diagnostic ON public.families 
-  FOR INSERT 
-  TO authenticated 
-  WITH CHECK (true);
-
--- Confirmation message:
--- NOTICE: DROP POLICY completed
--- NOTICE: CREATE POLICY completed
-```
-
-**Expected Result**: Both commands complete without error
+* Collecting family name
+* Calling createFamily()
+* Refreshing auth state
+* Redirecting to dashboard
 
 ---
 
-## Step 2: Verify Diagnostic Policy Deployment
+## Verification Results
 
-### Query: Confirm Diagnostic Policy Is Active
+Verified Successfully:
 
-**Purpose**: Verify that the diagnostic policy replaced the original policy
+✅ User registration
 
-**Execute in Supabase SQL Editor**:
+✅ Login
 
-```sql
--- ============================================================================
--- STEP 2: VERIFY DIAGNOSTIC POLICY DEPLOYMENT
--- ============================================================================
+✅ Logout
 
-SELECT 
-  policyname,
-  event_type,
-  permissive,
-  roles::text[] as policy_roles,
-  qual as using_condition,
-  with_check as check_condition
-FROM pg_policies 
-WHERE tablename = 'families' 
-  AND event_type = 'INSERT'
-ORDER BY policyname;
+✅ Session persistence
 
--- Expected Output:
--- | policyname                          | event_type | permissive | policy_roles | using_condition | check_condition |
--- | families_insert_as_owner_diagnostic | INSERT     | true       | {authenticated} | (null)          | true            |
-```
+✅ Profile loading
 
-**Record Output**: Verify that:
-- `families_insert_as_owner_diagnostic` policy is PRESENT
-- `families_insert_as_owner` policy is ABSENT
-- `with_check` condition is `true`
+✅ Family creation
+
+✅ Owner membership creation
+
+✅ Permission loading
+
+✅ Family loading
+
+✅ Dashboard access
+
+✅ RLS compliance
+
+---
+
+## Current Auth Bootstrap Flow
+
+Login
+↓
+Load Profile
+↓
+Load Family Membership
+↓
+Load Family
+↓
+Load Permissions
+↓
+Dashboard
+
+---
+
+## Current User State
+
+Owner User:
+Munib Ahmad
+
+Family:
+My Family - Home A51
+
+Role:
+owner
+
+Membership Status:
+active
+
+Authentication:
+working
+
+Family Creation:
+working
+
+Dashboard Access:
+working
+
+---
+
+## Recommended Cleanup
+
+Before next phase:
+
+* Remove debugging console logs
+* Remove investigation code
+* Keep RPC migration in repository
+* Delete duplicate test family records
+* Commit changes to GitHub
+
+Suggested Commit:
+
+fix: resolve family onboarding RLS bootstrap issue using RPC
+
+---
+
+## Next Development Phase
+
+Phase 4 - Dashboard
+
+Implementation Order:
+
+1. Dashboard layout
+2. Module selection
+3. Expense Management card
+4. Want To Buy card
+5. Month selector
+6. Dashboard navigation
+
+Family onboarding is now complete.
 
 ---
 
@@ -2060,38 +1493,6 @@ ORDER BY event_type, policyname;
 
 ---
 
-# Test Result Interpretation Guide
-
-## SCENARIO 1: INSERT Succeeds (Status 201)
-
-**What Happened**:
-- Family record was created successfully
-- No RLS rejection
-- The diagnostic policy `WITH CHECK (true)` allowed the INSERT
-
-**Root Cause Diagnosis**:
-✅ The failure IS caused by the condition `owner_user_id = auth.uid()`
-
-**Specific Root Cause (one of)**:
-1. `auth.uid()` returned NULL during RLS policy evaluation
-2. `auth.uid()` returned a different UUID value than `owner_user_id`
-3. JWT claims were not propagated to the RLS evaluation context
-4. PostgREST did not set session variables correctly before INSERT
-5. Database role/permission issue preventing auth.uid() resolution
-
-**Next Steps**:
-1. Enable Supabase Auth Debug logging
-2. Capture JWT token from Authorization header
-3. Verify JWT sub claim matches session.user.id
-4. Test `SELECT auth.uid()` directly in SQL Editor while authenticated
-5. Investigate PostgREST JWT claim mapping configuration
-6. Check for database role inheritance or permission gaps
-7. Verify Supabase JWT secret configuration
-
-**Action Priority**: URGENT - Auth context is not propagating to RLS layer
-
----
-
 ## SCENARIO 2: INSERT Fails with 42501 (RLS Rejection)
 
 **What Happened**:
@@ -2205,41 +1606,37 @@ ORDER BY event_type, policyname;
 
 ---
 
-# Test Execution Checklist
+# Current Known Issue
 
-**Pre-Test**:
-- [ ] Read entire SQL package
-- [ ] Backup Supabase database (or note safe rollback via Git)
-- [ ] Have browser DevTools ready (F12)
-- [ ] Have Supabase SQL Editor tab open
-- [ ] Record pre-test baseline (Step 0 queries)
+Status:
+Open
 
-**Deployment**:
-- [ ] Execute Step 1 SQL (deploy diagnostic policy)
-- [ ] Execute Step 2 query (verify deployment)
-- [ ] Record both outputs
+Issue:
 
-**Test Execution**:
-- [ ] Attempt family creation via frontend UI
-- [ ] Record response status and error (if any)
-- [ ] Check families table (Step 4 query)
-- [ ] Document result
+After successful authentication and family onboarding, users are shown the temporary authentication-ready placeholder instead of the production dashboard.
 
-**Rollback**:
-- [ ] Execute Step 5 SQL (restore original policy)
-- [ ] Execute Step 6 queries (verify rollback)
-- [ ] Compare pre-test and post-test policies (must match)
-- [ ] Record all outputs
+Current Screen Shows:
 
-**Documentation**:
-- [ ] Fill test execution log template above
-- [ ] Record all query outputs
-- [ ] Determine which scenario matches (1, 2, or 3)
-- [ ] Document next steps based on scenario
-- [ ] Update this section: Status: ✅ COMPLETED
+* User Name
+* Family Name
+* User Role
+* Sign Out Button
 
-**Post-Test Analysis**:
-- [ ] Review interpretation guide for your scenario
-- [ ] Identify specific root cause
-- [ ] Plan next investigation phase
-- [ ] Document findings in session memory
+Expected Behavior:
+
+* Dashboard Layout
+* Module Selection
+  * Expense Management
+  * Want To Buy
+* Month Selector
+* Navigation Structure
+
+Root Cause:
+
+Dashboard implementation has not yet been built.
+
+Priority:
+High
+
+Target Phase:
+Phase 4 - Dashboard

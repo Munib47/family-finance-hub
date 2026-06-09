@@ -8,17 +8,6 @@ export default function FamilySetup() {
   const navigate = useNavigate();
   const { actionLoading, error, profile, refreshAuthState, user } = useAuth();
 
-  console.log("FamilySetup render", {
-    userId: user?.id,
-    profileId: profile?.id,
-    profile,
-    authState: {
-      actionLoading,
-      error,
-      isAuthenticated: Boolean(user?.id),
-    },
-  });
-
   useEffect(() => {
     // If user somehow has a family, redirect to dashboard
     // This is a safety check
