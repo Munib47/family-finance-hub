@@ -92,6 +92,11 @@ export async function loadPermissions({ familyId, role, permissionDefinitions })
 export async function bootstrapAuthState(session) {
   const user = session?.user ?? null;
 
+  console.log("bootstrapAuthState start", {
+    sessionUserId: user?.id,
+    sessionEmail: user?.email,
+  });
+
   if (!user) {
     return {
       family: null,
@@ -113,6 +118,16 @@ export async function bootstrapAuthState(session) {
 
   const family = membership?.families ?? null;
   const role = membership?.base_role ?? null;
+
+  console.log("bootstrapAuthState loaded", {
+    profileId: profile?.id,
+    membershipUserId: membership?.user_id,
+    membershipFamilyId: membership?.family_id,
+    membershipBaseRole: membership?.base_role,
+    familyId: family?.id,
+    role,
+  });
+
   const permissions = await loadPermissions({
     familyId: membership?.family_id,
     permissionDefinitions,

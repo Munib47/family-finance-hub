@@ -8,6 +8,17 @@ export default function FamilySetup() {
   const navigate = useNavigate();
   const { actionLoading, error, profile, refreshAuthState, user } = useAuth();
 
+  console.log("FamilySetup render", {
+    userId: user?.id,
+    profileId: profile?.id,
+    profile,
+    authState: {
+      actionLoading,
+      error,
+      isAuthenticated: Boolean(user?.id),
+    },
+  });
+
   useEffect(() => {
     // If user somehow has a family, redirect to dashboard
     // This is a safety check
@@ -20,6 +31,11 @@ export default function FamilySetup() {
     if (!user?.id) {
       throw new Error("User session not found. Please refresh and try again.");
     }
+
+    console.log("USER_ID:", user?.id);
+    console.log("PROFILE_ID:", profile?.id);
+    console.log("USER_OBJECT:", JSON.stringify(user, null, 2));
+    console.log("PROFILE_OBJECT:", JSON.stringify(profile, null, 2));
 
     await createFamily(familyName, user.id);
 

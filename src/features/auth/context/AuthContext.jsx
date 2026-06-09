@@ -51,6 +51,11 @@ export function AuthProvider({ children }) {
     setBootstrapping(true);
     setError(null);
 
+    console.log("AuthProvider hydrateFromSession", {
+      sessionUserId: session?.user?.id,
+      session: session ? { expires_at: session.expires_at } : null,
+    });
+
     try {
       const nextAuthState = await bootstrapAuthState(session);
 
