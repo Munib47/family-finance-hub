@@ -5,6 +5,7 @@ import ForgotPassword from "../pages/auth/ForgotPassword";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
 import FamilySetup from "../pages/family/FamilySetup";
+import Dashboard from "../pages/Dashboard";
 
 function DashboardPlaceholder() {
   const { family, logout, profile, role } = useAuth();
@@ -54,7 +55,6 @@ export default function AppRoutes() {
           <Route path="/family/setup" element={<FamilySetup />} />
         </Route>
         <Route element={<ProtectedRoute requireFamily={true} />}>
-          {/* <Route path="/dashboard" element={<DashboardPlaceholder />} /> */}
           <Route path="/dashboard" element={<Dashboard />} />
         </Route>
         <Route path="*" element={<Navigate replace to="/" />} />

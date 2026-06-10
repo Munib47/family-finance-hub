@@ -59,6 +59,7 @@ src/App.jsx
 src/assets/hero.png
 src/assets/react.svg
 src/assets/vite.svg
+src/context/AppContext.jsx
 src/features/auth/components/AuthButton.jsx
 src/features/auth/components/AuthCard.jsx
 src/features/auth/components/AuthErrorState.jsx
@@ -72,6 +73,14 @@ src/features/auth/routes/ProtectedRoute.jsx
 src/features/auth/routes/PublicRoute.jsx
 src/features/auth/services/authBootstrapService.js
 src/features/auth/services/authService.js
+src/features/dashboard/components/ChooseOptionStep.jsx
+src/features/dashboard/components/DashboardHeader.jsx
+src/features/dashboard/components/DashboardLayout.jsx
+src/features/dashboard/components/FamilyCard.jsx
+src/features/dashboard/components/ModuleCard.jsx
+src/features/dashboard/components/MonthSelector.jsx
+src/features/dashboard/components/SelectMonthStep.jsx
+src/features/dashboard/index.js
 src/features/family/components/FamilySetupCard.jsx
 src/features/family/components/FamilySetupForm.jsx
 src/features/family/index.js
@@ -82,6 +91,7 @@ src/main.jsx
 src/pages/auth/ForgotPassword.jsx
 src/pages/auth/Login.jsx
 src/pages/auth/Register.jsx
+src/pages/Dashboard.jsx
 src/pages/family/FamilySetup.jsx
 src/routes/AppRoutes.jsx
 supabase/diagnostics/DIAGNOSTIC_EXECUTION_GUIDE.md
@@ -94,6 +104,167 @@ vite.config.js
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/context/AppContext.jsx">
+import { createContext, useContext, useState } from "react";
+
+const AppContext = createContext(null);
+
+export function AppProvider({ children }) {
+  // Set default initial state to the mock wireframe month "June 2026"
+  const [selectedMonth, setSelectedMonth] = useState({
+    month: "June",
+    year: 2026,
+    label: "June 2026",
+  });
+
+  return (
+    <AppContext.Provider value={{ selectedMonth, setSelectedMonth }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error("useApp must be used within an AppProvider");
+  }
+  return context;
+}
+</file>
+
+<file path="src/features/dashboard/components/ChooseOptionStep.jsx">
+export default function ChooseOptionStep({ onSelectModule }) {
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-1.5">
+        <h1 className="text-2xl font-bold tracking-tight">Choose an option</h1>
+        <p className="text-sm text-gray-500">Select what you want to do</p>
+      </div>
+
+      <div className="space-y-4 pt-4">
+        {/* Expense Management Option Box */}
+        <button
+          onClick={() => onSelectModule("expenses")}
+          className="w-full text-left p-5 rounded-2xl border border-gray-200 bg-white hover:border-gray-400 active:bg-gray-50 transition-all flex items-center gap-4 group"
+        >
+          <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <div>
+            <span className="block font-bold text-base text-gray-900">Expense Management</span>
+          </div>
+        </button>
+
+        {/* Want To Buy Option Box */}
+        <button
+          onClick={() => onSelectModule("want-to-buy")}
+          className="w-full text-left p-5 rounded-2xl border border-gray-200 bg-white hover:border-gray-400 active:bg-gray-50 transition-all flex items-center gap-4 group"
+        >
+          <div className="h-12 w-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <div>
+            <span className="block font-bold text-base text-gray-900">Want to Buy</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/components/DashboardLayout.jsx">
+import { Link } from "react-router-dom";
+
+export default function DashboardLayout({ children, currentStep, onBack, isOwner }) {
+  return (
+    <main className="min-h-screen bg-white text-gray-900 antialiased font-sans flex justify-center">
+      <div className="w-full max-w-md min-h-screen px-6 py-5 flex flex-col justify-between border-x border-gray-100">
+        
+        <div>
+          {/* TOP HEADER NAVIGATION BAR */}
+          <div className="flex items-center justify-between mb-8">
+            <button 
+              onClick={onBack}
+              className={`p-1 -ml-1 text-gray-800 transition-opacity ${
+                currentStep === "choose_option" ? "opacity-0 pointer-events-none" : "opacity-100"
+              }`}
+              aria-label="Go back"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </button>
+            
+            {isOwner && currentStep === "choose_option" && (
+              <Link to="/settings" className="p-1 text-gray-800" aria-label="Owner Settings">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </Link>
+            )}
+          </div>
+
+          {/* DYNAMIC SCREEN CONTENT STEP */}
+          {children}
+        </div>
+
+        {/* BOTTOM ACCENT FOOTER LINES */}
+        <div className="w-full flex flex-col items-center gap-0.5 pt-6 pb-2">
+          <div className="w-12 h-0.5 bg-gray-200 rounded-full"></div>
+          <div className="w-12 h-0.5 bg-gray-200 rounded-full"></div>
+        </div>
+
+      </div>
+    </main>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/components/SelectMonthStep.jsx">
+const AVAILABLE_MONTHS = [
+  { label: "April 2026", month: "April", year: 2026 },
+  { label: "May 2026", month: "May", year: 2026 },
+  { label: "June 2026", month: "June", year: 2026 },
+  { label: "July 2026", month: "July", year: 2026 },
+  { label: "August 2026", month: "August", year: 2026 },
+];
+
+export default function SelectMonthStep({ onSelectMonth }) {
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-1.5">
+        <h1 className="text-2xl font-bold tracking-tight">Select Month</h1>
+        <p className="text-sm text-gray-500">Slide to select month</p>
+      </div>
+
+      <div className="space-y-3 pt-4">
+        {AVAILABLE_MONTHS.map((m) => (
+          <button
+            key={m.label}
+            onClick={() => onSelectMonth(m)}
+            className="w-full text-center px-5 py-4 rounded-xl border border-gray-200 bg-white font-medium text-base text-gray-800 hover:border-gray-400 hover:bg-gray-50 active:scale-[0.99] transition-all"
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/index.js">
+export { default as DashboardHeader } from "./components/DashboardHeader";
+export { default as FamilyCard } from "./components/FamilyCard";
+export { default as ModuleCard } from "./components/ModuleCard";
+</file>
 
 <file path=".gitignore">
 # Logs
@@ -913,6 +1084,163 @@ export async function sendPasswordResetEmail(email, redirectTo) {
 }
 </file>
 
+<file path="src/features/dashboard/components/DashboardHeader.jsx">
+export default function DashboardHeader({
+  familyName,
+  role,
+}) {
+  const formattedRole =
+    role?.replaceAll("_", " ")?.replace(/\b\w/g, (char) => char.toUpperCase()) ||
+    "Member";
+
+  return (
+    <header className="space-y-1">
+      <h1 className="text-2xl font-bold text-gray-900">
+        Dashboard
+      </h1>
+
+      <p className="text-sm text-gray-500">
+        {familyName}
+      </p>
+
+      <div className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+        {formattedRole}
+      </div>
+    </header>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/components/FamilyCard.jsx">
+export default function FamilyCard({
+  familyName,
+  memberCount = null,
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-black text-white">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M17 20h5V9H2v11h5m10 0v-4a3 3 0 00-3-3H10a3 3 0 00-3 3v4m10 0H7"
+            />
+          </svg>
+        </div>
+
+        <div>
+          <p className="text-sm text-gray-500">
+            Active Family
+          </p>
+
+          <h2 className="font-semibold text-gray-900">
+            {familyName}
+          </h2>
+
+          {memberCount !== null && (
+            <p className="text-xs text-gray-500">
+              {memberCount} Members
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/components/ModuleCard.jsx">
+import { Link } from "react-router-dom";
+
+export default function ModuleCard({
+  title,
+  description,
+  icon,
+  to,
+}) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-black hover:shadow-md"
+    >
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-black text-white">
+        {icon}
+      </div>
+
+      <h3 className="mb-1 text-lg font-semibold text-gray-900">
+        {title}
+      </h3>
+
+      <p className="text-sm text-gray-500">
+        {description}
+      </p>
+    </Link>
+  );
+}
+</file>
+
+<file path="src/features/dashboard/components/MonthSelector.jsx">
+import { useMemo } from "react";
+
+export default function MonthSelector({
+  value,
+  onChange,
+}) {
+  const months = useMemo(
+    () => [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ],
+    []
+  );
+
+  return (
+    <div>
+      <label
+        htmlFor="month-selector"
+        className="mb-2 block text-sm font-medium text-gray-700"
+      >
+        Selected Month
+      </label>
+
+      <select
+        id="month-selector"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-black"
+      >
+        {months.map((month) => (
+          <option
+            key={month}
+            value={month}
+          >
+            {month}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+</file>
+
 <file path="src/features/family/components/FamilySetupCard.jsx">
 import { AuthCard } from "../../auth";
 import FamilySetupForm from "./FamilySetupForm";
@@ -1137,6 +1465,58 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
+</file>
+
+<file path="src/pages/Dashboard.jsx">
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../features/auth";
+import { useApp } from "../context/AppContext";
+
+// Modular Feature Component Imports
+import DashboardLayout from "../features/dashboard/components/DashboardLayout";
+import ChooseOptionStep from "../features/dashboard/components/ChooseOptionStep";
+import SelectMonthStep from "../features/dashboard/components/SelectMonthStep";
+
+export default function Dashboard() {
+  const { isOwner } = useAuth();
+  const { setSelectedMonth } = useApp();
+  const navigate = useNavigate();
+
+  const [currentStep, setCurrentStep] = useState("choose_option");
+  const [selectedModule, setSelectedModule] = useState(null);
+
+  const handleModuleSelect = (moduleType) => {
+    setSelectedModule(moduleType);
+    setCurrentStep("select_month");
+  };
+
+  const handleMonthSelect = (monthConfig) => {
+    setSelectedMonth(monthConfig);
+    if (selectedModule === "expenses") {
+      navigate("/expenses");
+    } else {
+      navigate("/want-to-buy");
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep === "select_month") {
+      setCurrentStep("choose_option");
+      setSelectedModule(null);
+    }
+  };
+
+  return (
+    <DashboardLayout currentStep={currentStep} onBack={handleBack} isOwner={isOwner}>
+      {currentStep === "choose_option" ? (
+        <ChooseOptionStep onSelectModule={handleModuleSelect} />
+      ) : (
+        <SelectMonthStep onSelectMonth={handleMonthSelect} />
+      )}
+    </DashboardLayout>
+  );
+}
 </file>
 
 <file path="supabase/diagnostics/DIAGNOSTIC_EXECUTION_GUIDE.md">
@@ -4103,12 +4483,15 @@ export default defineConfig({
 
 <file path="src/App.jsx">
 import { AuthProvider } from "./features/auth";
+import { AppProvider } from "./context/AppContext";
 import AppRoutes from "./routes/AppRoutes";
 
 function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <AppProvider>
+        <AppRoutes />
+      </AppProvider>
     </AuthProvider>
   );
 }
@@ -5442,72 +5825,6 @@ export default function FamilySetup() {
 }
 </file>
 
-<file path="src/routes/AppRoutes.jsx">
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-
-import { ProtectedRoute, PublicRoute, useAuth } from "../features/auth";
-import ForgotPassword from "../pages/auth/ForgotPassword";
-import Login from "../pages/auth/Login";
-import Register from "../pages/auth/Register";
-import FamilySetup from "../pages/family/FamilySetup";
-
-function DashboardPlaceholder() {
-  const { family, logout, profile, role } = useAuth();
-
-  return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
-      <section className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm">
-          <p className="text-sm font-medium text-emerald-700">Authentication ready</p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-950">
-            {profile?.display_name || profile?.email || "Signed in"}
-          </h1>
-          <dl className="mt-5 space-y-3 text-sm text-slate-600">
-            <div>
-              <dt className="font-medium text-slate-950">Family</dt>
-              <dd>{family?.name ?? "Family setup pending"}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-950">Role</dt>
-              <dd>{role ?? "No active role yet"}</dd>
-            </div>
-          </dl>
-          <button
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-            type="button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-export default function AppRoutes() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<PublicRoute />}>
-          <Route path="/" element={<Login />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-        </Route>
-        <Route element={<ProtectedRoute requireFamily={false} />}>
-          <Route path="/family/setup" element={<FamilySetup />} />
-        </Route>
-        <Route element={<ProtectedRoute requireFamily={true} />}>
-          <Route path="/dashboard" element={<DashboardPlaceholder />} />
-        </Route>
-        <Route path="*" element={<Navigate replace to="/" />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-</file>
-
 <file path="docs/roadmap/roadmap.md">
 # Development Roadmap
 
@@ -5655,6 +5972,73 @@ Testing & Deployment
 * QA
 * Performance
 * Production Deployment
+</file>
+
+<file path="src/routes/AppRoutes.jsx">
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+
+import { ProtectedRoute, PublicRoute, useAuth } from "../features/auth";
+import ForgotPassword from "../pages/auth/ForgotPassword";
+import Login from "../pages/auth/Login";
+import Register from "../pages/auth/Register";
+import FamilySetup from "../pages/family/FamilySetup";
+import Dashboard from "../pages/Dashboard";
+
+function DashboardPlaceholder() {
+  const { family, logout, profile, role } = useAuth();
+
+  return (
+    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-950">
+      <section className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-md flex-col justify-center">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 text-left shadow-sm">
+          <p className="text-sm font-medium text-emerald-700">Authentication ready</p>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">
+            {profile?.display_name || profile?.email || "Signed in"}
+          </h1>
+          <dl className="mt-5 space-y-3 text-sm text-slate-600">
+            <div>
+              <dt className="font-medium text-slate-950">Family</dt>
+              <dd>{family?.name ?? "Family setup pending"}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-950">Role</dt>
+              <dd>{role ?? "No active role yet"}</dd>
+            </div>
+          </dl>
+          <button
+            className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            type="button"
+            onClick={logout}
+          >
+            Sign out
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export default function AppRoutes() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<PublicRoute />}>
+          <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+        </Route>
+        <Route element={<ProtectedRoute requireFamily={false} />}>
+          <Route path="/family/setup" element={<FamilySetup />} />
+        </Route>
+        <Route element={<ProtectedRoute requireFamily={true} />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+        </Route>
+        <Route path="*" element={<Navigate replace to="/" />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
 </file>
 
 <file path="PROJECT_CONTEXT.MD">
